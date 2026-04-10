@@ -12,13 +12,23 @@ struct StylePickerSheet: View {
                 .padding()
 
             List(availableStyles, id: \.self) { style in
-                Button(style) {
+                Button {
                     selectedStyle = style
                     state.setPreviewStyle(style)
+                } label: {
+                    HStack {
+                        Text(style)
+                            .foregroundStyle(selectedStyle == style ? .blue : .primary)
+                        Spacer()
+                        if selectedStyle == style {
+                            Image(systemName: "checkmark")
+                                .foregroundStyle(.blue)
+                        }
+                    }
+                    .frame(height: 34)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .frame(height: 34)
-                .foregroundStyle(selectedStyle == style ? .blue : .primary)
             }
         }
         .frame(width: 260, height: 350)

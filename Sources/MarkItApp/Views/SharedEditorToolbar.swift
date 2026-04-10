@@ -25,8 +25,8 @@ struct SharedEditorToolbar: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .padding(.horizontal, 14)
-        .frame(height: 36)
+        .padding(.horizontal, 20)
+        .frame(height: 42)
         .background(.bar)
         .overlay(alignment: .bottom) {
             Divider()
