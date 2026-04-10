@@ -9,7 +9,7 @@ struct EditorView: View {
                 get: { document.text },
                 set: { document.updateText($0) }
             ))
-            .font(.system(.body, design: .monospaced))
+            .font(.system(size: Typography.editorFontSize, weight: .regular, design: .monospaced))
             .padding(12)
             .background(Color.clear)
             .clearScrollBackgroundIfAvailable()
