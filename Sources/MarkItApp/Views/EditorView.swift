@@ -10,8 +10,9 @@ struct EditorView: View {
                 set: { document.updateText($0) }
             ))
             .font(.system(size: Typography.editorFontSize, weight: .regular, design: .monospaced))
+            .lineSpacing(4)
             .padding(12)
-            .background(Color.clear)
+            .background(Color.init(red: 255/255.0, green: 252/255.0, blue: 234/255.0))
             .clearScrollBackgroundIfAvailable()
         }
         .frame(minWidth: 500, idealWidth: 500)

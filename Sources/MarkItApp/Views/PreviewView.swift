@@ -20,6 +20,7 @@ struct PreviewView: View {
                 } else {
                     Markdown(document.text)
                         .markdownTheme(.gitHub)
+                        .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(16)
                 }
