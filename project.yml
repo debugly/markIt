@@ -1,0 +1,40 @@
+name: Markit
+options:
+  bundleIdPrefix: com.debugly
+  deploymentTarget:
+    macOS: "12.0"
+  xcodeVersion: "15.0"
+
+packages:
+  MarkdownUI:
+    url: https://github.com/gonzalezreal/swift-markdown-ui
+    from: 2.0.2
+
+targets:
+  Markit:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources/MarkItApp
+    resources:
+      - path: Resources
+    info:
+      path: Resources/Info.plist
+    dependencies:
+      - package: MarkdownUI
+    settings:
+      base:
+        PRODUCT_NAME: Markit
+        PRODUCT_BUNDLE_IDENTIFIER: com.debugly.markit
+        MARKETING_VERSION: "0.0.1"
+        CURRENT_PROJECT_VERSION: "0.0.1"
+        INFOPLIST_FILE: Resources/Info.plist
+        SWIFT_VERSION: "5.9"
+
+schemes:
+  Markit:
+    build:
+      targets:
+        Markit: all
+    run:
+      config: Debug
