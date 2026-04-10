@@ -18,6 +18,7 @@ targets:
       - path: Sources/MarkItApp
     resources:
       - path: Resources
+      - path: Sources/MarkItApp/Styles
     info:
       path: Resources/Info.plist
     dependencies:

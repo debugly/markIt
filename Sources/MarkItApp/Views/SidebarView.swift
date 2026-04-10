@@ -6,6 +6,7 @@ struct SidebarView: View {
     @State private var prompt: PromptContext? = nil
     @State private var deleteTarget: URL? = nil
     @State private var isPickingFolder = false
+    @State private var showStylePicker = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -69,6 +70,16 @@ struct SidebarView: View {
                     Image(systemName: "doc.richtext")
                 }
                 .help("显示/隐藏预览")
+
+                Button {
+                    showStylePicker = true
+                } label: {
+                    Image(systemName: "gearshape")
+                }
+                .help("设置")
+                .sheet(isPresented: $showStylePicker) {
+                    StylePickerSheet(state: state)
+                }
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 8)

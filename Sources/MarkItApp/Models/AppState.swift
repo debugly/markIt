@@ -12,8 +12,10 @@ final class AppState: ObservableObject {
     @Published var showEditor = true
     @Published var showPreview = true
     @Published var showUnsavedAlert = false
+    @Published var previewStyle: String = "GitHub.css"
 
     let document = DocumentModel()
+    private let stylesKey = "MarkIt.PreviewStyle"
     private let fileManager = FileManager.default
     private let bookmarksKey = "MarkIt.Bookmarks"
     private var lastSelectedFile: FileNode? = nil
@@ -22,7 +24,17 @@ final class AppState: ObservableObject {
 
     init() {
         restoreBookmarks()
+        restorePreviewStyle()
         rebuildTree()
+    }
+
+    private func restorePreviewStyle() {
+        previewStyle = UserDefaults.standard.string(forKey: stylesKey) ?? "GitHub.css"
+    }
+
+    func setPreviewStyle(_ style: String) {
+        previewStyle = style
+        UserDefaults.standard.set(style, forKey: stylesKey)
     }
 
     func addRootFolder(_ url: URL, storeBookmark: Bool = false) {

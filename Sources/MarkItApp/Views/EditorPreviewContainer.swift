@@ -17,7 +17,7 @@ struct EditorPreviewContainer: View {
                     }
 
                     if state.showPreview {
-                        PreviewView(document: state.document)
+                        PreviewView(state: state)
                     }
                 }
             }.ignoresSafeArea(.container, edges: .top) // 强制忽略顶部安全区域
