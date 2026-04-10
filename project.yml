@@ -6,9 +6,9 @@ options:
   xcodeVersion: "15.0"
 
 packages:
-  MarkdownUI:
-    url: https://github.com/gonzalezreal/swift-markdown-ui
-    from: 2.0.2
+  Ink:
+    url: https://github.com/JohnSundell/Ink.git
+    from: 0.6.0
 
 targets:
   Markit:
@@ -21,7 +21,7 @@ targets:
     info:
       path: Resources/Info.plist
     dependencies:
-      - package: MarkdownUI
+      - package: Ink
     settings:
       base:
         PRODUCT_NAME: Markit

@@ -8,13 +8,13 @@ let package = Package(
         .executable(name: "Markit", targets: ["MarkItApp"])
     ],
     dependencies: [
-        .package(url: "https://github.com/johnxnguyen/Down.git", from: "0.11.0")
+        .package(url: "https://github.com/JohnSundell/Ink.git", from: "0.6.0")
     ],
     targets: [
         .executableTarget(
             name: "MarkItApp",
             dependencies: [
-                .product(name: "Down", package: "Down")
+                .product(name: "Ink", package: "Ink")
             ]
         )
     ]
