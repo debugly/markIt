@@ -11,12 +11,14 @@ final class AppState: ObservableObject {
     @Published var showSidebar = true
     @Published var showEditor = true
     @Published var showPreview = true
+    @Published var showUnsavedAlert = false
 
     let document = DocumentModel()
     private let fileManager = FileManager.default
     private let bookmarksKey = "MarkIt.Bookmarks"
     private var lastSelectedFile: FileNode? = nil
     private var isAdjustingSelection = false
+    private var pendingSwitchURL: URL? = nil
 
     init() {
         restoreBookmarks()
@@ -54,12 +56,8 @@ final class AppState: ObservableObject {
         guard isAdjustingSelection == false else { return }
         guard let node else { return }
         guard node.isDirectory == false else { return }
-        if document.prepareForSwitch(to: node.url) {
+        if requestSwitch(to: node.url) {
             lastSelectedFile = node
-        } else {
-            isAdjustingSelection = true
-            selection = lastSelectedFile
-            isAdjustingSelection = false
         }
     }
 
@@ -136,6 +134,57 @@ final class AppState: ObservableObject {
         NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
+    func requestSwitch(to url: URL) -> Bool {
+        if document.url != nil {
+            _ = document.saveIfDirty()
+            document.open(url: url)
+            return true
+        }
+
+        if document.isDirty {
+            pendingSwitchURL = url
+            DispatchQueue.main.async { [weak self] in
+                self?.showUnsavedAlert = true
+            }
+            return false
+        }
+
+        document.open(url: url)
+        return true
+    }
+
+    func resolveUnsavedDecision(_ decision: UnsavedDecision) {
+        let targetURL = pendingSwitchURL
+        pendingSwitchURL = nil
+        showUnsavedAlert = false
+
+        switch decision {
+        case .save:
+            DispatchQueue.main.async { [weak self] in
+                self?.beginSavePanel(defaultName: "未命名.md") { [weak self] url in
+                    guard let self else { return }
+                    if let url, self.document.saveNow(to: url) {
+                        self.document.updateURL(url)
+                        if let targetURL {
+                            self.document.open(url: targetURL)
+                            self.updateLastSelectionIfPossible()
+                        }
+                    } else {
+                        self.revertSelection()
+                    }
+                }
+            }
+        case .discard:
+            document.clear()
+            if let targetURL {
+                document.open(url: targetURL)
+                updateLastSelectionIfPossible()
+            }
+        case .cancel:
+            revertSelection()
+        }
+    }
+
     private func uniqueURL(for url: URL) -> URL {
         if fileManager.fileExists(atPath: url.path) == false {
             return url
@@ -184,6 +233,32 @@ final class AppState: ObservableObject {
         }
         rootFolders = resolved
     }
+
+    private func revertSelection() {
+        isAdjustingSelection = true
+        selection = lastSelectedFile
+        isAdjustingSelection = false
+    }
+
+    private func updateLastSelectionIfPossible() {
+        if let node = selection, node.isDirectory == false {
+            lastSelectedFile = node
+        }
+    }
+
+    private func beginSavePanel(defaultName: String, completion: @escaping (URL?) -> Void) {
+        let panel = NSSavePanel()
+        panel.title = "保存文件"
+        panel.nameFieldStringValue = defaultName
+        if let window = NSApp.keyWindow {
+            panel.beginSheetModal(for: window) { response in
+                completion(response == .OK ? panel.url : nil)
+            }
+        } else {
+            let response = panel.runModal()
+            completion(response == .OK ? panel.url : nil)
+        }
+    }
 }
 
 final class DocumentModel: ObservableObject {
@@ -219,6 +294,14 @@ final class DocumentModel: ObservableObject {
         scheduleSave()
     }
 
+    func saveIfDirty() -> Bool {
+        guard let url else { return false }
+        if isDirty {
+            return saveNow(to: url)
+        }
+        return true
+    }
+
     func updateURL(_ newURL: URL) {
         url = newURL
     }
@@ -227,36 +310,6 @@ final class DocumentModel: ObservableObject {
         url = nil
         text = ""
         isDirty = false
-    }
-
-    func prepareForSwitch(to newURL: URL) -> Bool {
-        if let currentURL = url {
-            if isDirty {
-                if saveNow(to: currentURL) == false {
-                    return false
-                }
-            }
-            open(url: newURL)
-            return true
-        }
-
-        if isDirty {
-            switch promptForUnsavedChanges() {
-            case .save:
-                guard saveViaPanel() != nil else { return false }
-                open(url: newURL)
-                return true
-            case .discard:
-                clear()
-                open(url: newURL)
-                return true
-            case .cancel:
-                return false
-            }
-        }
-
-        open(url: newURL)
-        return true
     }
 
     func confirmCloseIfNeeded() -> Bool {
@@ -282,7 +335,7 @@ final class DocumentModel: ObservableObject {
     }
 
     @discardableResult
-    private func saveNow(to url: URL) -> Bool {
+    func saveNow(to url: URL) -> Bool {
         do {
             try text.write(to: url, atomically: true, encoding: .utf8)
             isDirty = false
@@ -334,6 +387,12 @@ final class DocumentModel: ObservableObject {
 }
 
 private enum SaveDecision {
+    case save
+    case discard
+    case cancel
+}
+
+enum UnsavedDecision {
     case save
     case discard
     case cancel

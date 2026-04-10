@@ -11,7 +11,9 @@ struct EditorView: View {
             ))
             .font(.system(.body, design: .monospaced))
             .padding(12)
+            .background(Color.clear)
+            .clearScrollBackgroundIfAvailable()
         }
-        .frame(minWidth: 320)
+        .frame(minWidth: 500, idealWidth: 500)
     }
 }

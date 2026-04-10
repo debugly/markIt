@@ -14,35 +14,6 @@ struct ContentView: View {
             EditorPreviewContainer(state: state)
         }
         .background(.regularMaterial)
-        .toolbar {
-            ToolbarItemGroup(placement: .navigation) {
-                Button {
-                    isPickingFolder = true
-                } label: {
-                    Label("添加目录", systemImage: "folder.badge.plus")
-                }
-
-                Divider()
-
-                Button {
-                    state.showSidebar.toggle()
-                } label: {
-                    Label("目录", systemImage: "sidebar.leading")
-                }
-
-                Button {
-                    state.showEditor.toggle()
-                } label: {
-                    Label("编辑", systemImage: "square.and.pencil")
-                }
-
-                Button {
-                    state.showPreview.toggle()
-                } label: {
-                    Label("预览", systemImage: "doc.richtext")
-                }
-            }
-        }
         .fileImporter(
             isPresented: $isPickingFolder,
             allowedContentTypes: [UTType.folder],
@@ -61,5 +32,12 @@ struct ContentView: View {
         .onChange(of: state.showSidebar) { _ in state.closeWindowIfNeeded() }
         .onChange(of: state.showEditor) { _ in state.closeWindowIfNeeded() }
         .onChange(of: state.showPreview) { _ in state.closeWindowIfNeeded() }
+        .alert("是否保存未命名的文件？", isPresented: $state.showUnsavedAlert) {
+            Button("保存") { state.resolveUnsavedDecision(.save) }
+            Button("放弃", role: .destructive) { state.resolveUnsavedDecision(.discard) }
+            Button("取消", role: .cancel) { state.resolveUnsavedDecision(.cancel) }
+        } message: {
+            Text("你的更改尚未保存。")
+        }
     }
 }

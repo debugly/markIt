@@ -1,39 +1,90 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct SidebarView: View {
     @ObservedObject var state: AppState
     @State private var prompt: PromptContext? = nil
     @State private var deleteTarget: URL? = nil
+    @State private var isPickingFolder = false
 
     var body: some View {
-        List(selection: $state.selection) {
-            OutlineGroup(state.tree, children: \.children) { node in
-                Label(node.name, systemImage: node.isDirectory ? "folder" : "doc.text")
-                    .tag(node)
-                    .contextMenu {
-                        if node.isDirectory {
-                            Button("新增文件夹") { openPrompt(.newFolder(parent: node.url)) }
-                            Button("新增文件") { openPrompt(.newFile(parent: node.url)) }
-                            Button("修改文件夹名") { openPrompt(.rename(target: node.url)) }
-                            Divider()
-                            Button("刷新") { state.refresh() }
-                            Button("在 Finder 中显示") { state.revealInFinder(node.url) }
-                        } else {
-                            Button("修改文件名") { openPrompt(.rename(target: node.url)) }
-                            Button("创建副本") { openPrompt(.duplicate(target: node.url)) }
-                            Divider()
-                            Button("刷新") { state.refresh() }
-                            Button("删除", role: .destructive) { deleteTarget = node.url }
-                            Button("在 Finder 中显示") { state.revealInFinder(node.url) }
+        VStack(spacing: 0) {
+            List(selection: $state.selection) {
+                OutlineGroup(state.tree, children: \.children) { node in
+                    Label(node.name, systemImage: node.isDirectory ? "folder" : "doc.text")
+                        .tag(node)
+                        .contextMenu {
+                            if node.isDirectory {
+                                Button("新增文件夹") { openPrompt(.newFolder(parent: node.url)) }
+                                Button("新增文件") { openPrompt(.newFile(parent: node.url)) }
+                                Button("修改文件夹名") { openPrompt(.rename(target: node.url)) }
+                                Divider()
+                                Button("刷新") { state.refresh() }
+                                Button("在 Finder 中显示") { state.revealInFinder(node.url) }
+                            } else {
+                                Button("修改文件名") { openPrompt(.rename(target: node.url)) }
+                                Button("创建副本") { openPrompt(.duplicate(target: node.url)) }
+                                Divider()
+                                Button("刷新") { state.refresh() }
+                                Button("删除", role: .destructive) { deleteTarget = node.url }
+                                Button("在 Finder 中显示") { state.revealInFinder(node.url) }
+                            }
                         }
-                    }
+                }
             }
+            .listStyle(.sidebar)
+            .animation(nil, value: state.tree)
+            .contextMenu {
+                Button("打开文件夹") { state.promptOpenFolder() }
+            }
+
+            Divider()
+
+            HStack(spacing: 12) {
+                Button {
+                    isPickingFolder = true
+                } label: {
+                    Label("打开文件夹", systemImage: "folder.badge.plus")
+                }
+
+                Spacer()
+
+                Button {
+                    state.showSidebar.toggle()
+                } label: {
+                    Image(systemName: "sidebar.leading")
+                }
+                .help("显示/隐藏目录")
+
+                Button {
+                    state.showEditor.toggle()
+                } label: {
+                    Image(systemName: "square.and.pencil")
+                }
+                .help("显示/隐藏编辑器")
+
+                Button {
+                    state.showPreview.toggle()
+                } label: {
+                    Image(systemName: "doc.richtext")
+                }
+                .help("显示/隐藏预览")
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
         }
-        .listStyle(.sidebar)
-        .frame(minWidth: 220)
-        .animation(nil, value: state.tree)
-        .contextMenu {
-            Button("打开文件夹") { state.promptOpenFolder() }
+        .frame(minWidth: 280, idealWidth: 280, maxWidth: 320)
+        .fileImporter(
+            isPresented: $isPickingFolder,
+            allowedContentTypes: [UTType.folder],
+            allowsMultipleSelection: true
+        ) { result in
+            switch result {
+            case .success(let urls):
+                urls.forEach { state.addRootFolder($0, storeBookmark: true) }
+            case .failure:
+                break
+            }
         }
         .sheet(item: $prompt) { context in
             NamePromptSheet(

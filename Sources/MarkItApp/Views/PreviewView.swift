@@ -3,11 +3,15 @@ import SwiftUI
 
 struct PreviewView: View {
     @ObservedObject var document: DocumentModel
+    @State private var isReady = true
 
     var body: some View {
         VStack(spacing: 0) {
             ScrollView {
-                if document.text.isEmpty {
+                if !isReady {
+                    ProgressView("正在加载预览…")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                } else if document.text.isEmpty {
                     PlaceholderView(
                         title: "暂无内容",
                         systemImage: "doc.richtext",
@@ -20,7 +24,24 @@ struct PreviewView: View {
                         .padding(16)
                 }
             }
+            .background(Color.white)
+            .clearScrollBackgroundIfAvailable()
         }
-        .frame(minWidth: 320)
+        .frame(minWidth: 500, idealWidth: 500)
+        .onChange(of: document.url) { _ in
+            delayPreview()
+        }
+        .onAppear {
+            delayPreview()
+        }
+    }
+
+    private func delayPreview() {
+        isReady = false
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 180_000_000)
+            if Task.isCancelled { return }
+            isReady = true
+        }
     }
 }
