@@ -1,32 +1,37 @@
-import MarkdownUI
+import Down
 import SwiftUI
+import WebKit
+
+struct WebView: NSViewRepresentable {
+    let html: String
+
+    func makeNSView(context: Context) -> WKWebView {
+        let config = WKWebViewConfiguration()
+        let webView = WKWebView(frame: .zero, configuration: config)
+        webView.setValue(false, forKey: "drawsBackground")
+        return webView
+    }
+
+    func updateNSView(_ webView: WKWebView, context: Context) {
+        webView.loadHTMLString(html, baseURL: nil)
+    }
+}
 
 struct PreviewView: View {
     @ObservedObject var document: DocumentModel
-    @State private var isReady = true
+    @State private var html: String = ""
 
     var body: some View {
         VStack(spacing: 0) {
-            ScrollView {
-                if !isReady {
-                    ProgressView("正在加载预览…")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                } else if document.text.isEmpty {
-                    PlaceholderView(
-                        title: "暂无内容",
-                        systemImage: "doc.richtext",
-                        message: "开始编辑以查看预览"
-                    )
-                } else {
-                    Markdown(document.text)
-                        .markdownTheme(.gitHub)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(16)
-                }
+            if document.text.isEmpty {
+                PlaceholderView(
+                    title: "暂无内容",
+                    systemImage: "doc.richtext",
+                    message: "开始编辑以查看预览"
+                )
+            } else {
+                WebView(html: html)
             }
-            .background(Color.white)
-            .clearScrollBackgroundIfAvailable()
         }
         .frame(minWidth: 500, idealWidth: 500)
         .onChange(of: document.url) { _ in
@@ -35,14 +40,21 @@ struct PreviewView: View {
         .onAppear {
             delayPreview()
         }
+        .onChange(of: document.text) { newText in
+            renderMarkdown(newText)
+        }
     }
 
     private func delayPreview() {
-        isReady = false
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 180_000_000)
-            if Task.isCancelled { return }
-            isReady = true
+        renderMarkdown(document.text)
+    }
+
+    private func renderMarkdown(_ text: String) {
+        guard !text.isEmpty else {
+            html = ""
+            return
         }
+        let down = Down(markdownString: text)
+        html = (try? down.toHTML(.smartUnsafe)) ?? ""
     }
 }

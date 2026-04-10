@@ -8,13 +8,13 @@ let package = Package(
         .executable(name: "Markit", targets: ["MarkItApp"])
     ],
     dependencies: [
-        .package(url: "https://github.com/gonzalezreal/swift-markdown-ui", from: "2.0.2")
+        .package(url: "https://github.com/johnxnguyen/Down.git", from: "0.11.0")
     ],
     targets: [
         .executableTarget(
             name: "MarkItApp",
             dependencies: [
-                .product(name: "MarkdownUI", package: "swift-markdown-ui")
+                .product(name: "Down", package: "Down")
             ]
         )
     ]

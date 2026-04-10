@@ -1,30 +1,12 @@
 {
   "pins" : [
     {
-      "identity" : "networkimage",
+      "identity" : "down",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/gonzalezreal/NetworkImage",
+      "location" : "https://github.com/johnxnguyen/Down.git",
       "state" : {
-        "revision" : "2849f5323265386e200484b0d0f896e73c3411b9",
-        "version" : "6.0.1"
-      }
-    },
-    {
-      "identity" : "swift-cmark",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/swiftlang/swift-cmark",
-      "state" : {
-        "revision" : "5d9bdaa4228b381639fff09403e39a04926e2dbe",
-        "version" : "0.7.1"
-      }
-    },
-    {
-      "identity" : "swift-markdown-ui",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/gonzalezreal/swift-markdown-ui",
-      "state" : {
-        "revision" : "5f613358148239d0292c0cef674a3c2314737f9e",
-        "version" : "2.4.1"
+        "revision" : "f34b166be1f1db4aa8f573067e901d72f2a6be57",
+        "version" : "0.11.0"
       }
     }
   ],
