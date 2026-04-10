@@ -19,13 +19,14 @@ struct WebView: NSViewRepresentable {
 
 struct PreviewView: View {
     @ObservedObject var state: AppState
+    @ObservedObject var document: DocumentModel
     @State private var html: String = ""
 
     private let parser = MarkdownParser()
 
     var body: some View {
         VStack(spacing: 0) {
-            if state.document.text.isEmpty {
+            if document.text.isEmpty {
                 PlaceholderView(
                     title: "暂无内容",
                     systemImage: "doc.richtext",
@@ -36,22 +37,22 @@ struct PreviewView: View {
             }
         }
         .frame(minWidth: 500, idealWidth: 500)
-        .onChange(of: state.document.url) { _ in
+        .onChange(of: document.url) { _ in
             delayPreview()
         }
         .onAppear {
             delayPreview()
         }
-        .onChange(of: state.document.text) { newText in
+        .onChange(of: document.text) { newText in
             renderMarkdown(newText)
         }
         .onChange(of: state.previewStyle) { _ in
-            renderMarkdown(state.document.text)
+            renderMarkdown(document.text)
         }
     }
 
     private func delayPreview() {
-        renderMarkdown(state.document.text)
+        renderMarkdown(document.text)
     }
 
     private func renderMarkdown(_ text: String) {
