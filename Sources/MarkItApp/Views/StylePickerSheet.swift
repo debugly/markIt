@@ -2,13 +2,12 @@ import SwiftUI
 
 struct StylePickerSheet: View {
     @ObservedObject var state: AppState
-    @Environment(\.dismiss) private var dismiss
     @State private var availableStyles: [String] = []
     @State private var selectedStyle: String = ""
 
     var body: some View {
         VStack(spacing: 0) {
-            Text("选择预览样式")
+            Text("选择渲染样式")
                 .font(.headline)
                 .padding()
 
@@ -18,20 +17,11 @@ struct StylePickerSheet: View {
                     state.setPreviewStyle(style)
                 }
                 .buttonStyle(.plain)
+                .frame(height: 34)
                 .foregroundStyle(selectedStyle == style ? .blue : .primary)
             }
-
-            Spacer()
-
-            HStack {
-                Spacer()
-                Button("关闭") {
-                    dismiss()
-                }
-            }
-            .padding()
         }
-        .frame(width: 300, height: 400)
+        .frame(width: 260, height: 350)
         .onAppear {
             loadStyles()
         }
