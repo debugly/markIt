@@ -98,6 +98,22 @@ struct MarkItApp: App {
                 }
                 .disabled(state.recentFiles.isEmpty)
             }
+            CommandGroup(after: .toolbar) {
+                Button("显示/隐藏目录") {
+                    state.showSidebar.toggle()
+                }
+                .keyboardShortcut("1", modifiers: [.command, .option])
+
+                Button("显示/隐藏编辑器") {
+                    state.showEditor.toggle()
+                }
+                .keyboardShortcut("2", modifiers: [.command, .option])
+
+                Button("显示/隐藏预览") {
+                    state.showPreview.toggle()
+                }
+                .keyboardShortcut("3", modifiers: [.command, .option])
+            }
         }
         .windowStyle(.hiddenTitleBar)
     }

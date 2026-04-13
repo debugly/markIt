@@ -51,27 +51,6 @@ struct SidebarView: View {
 
                 Spacer()
 
-                Button {
-                    state.showSidebar.toggle()
-                } label: {
-                    Image(systemName: "sidebar.leading")
-                }
-                .help("显示/隐藏目录")
-
-                Button {
-                    state.showEditor.toggle()
-                } label: {
-                    Image(systemName: "square.and.pencil")
-                }
-                .help("显示/隐藏编辑器")
-
-                Button {
-                    state.showPreview.toggle()
-                } label: {
-                    Image(systemName: "doc.richtext")
-                }
-                .help("显示/隐藏预览")
-
                 Divider()
                     .frame(height: 16)
 
