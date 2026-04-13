@@ -64,10 +64,12 @@ final class AppState: ObservableObject {
 
     private func restorePreviewStyle() {
         previewStyle = UserDefaults.standard.string(forKey: stylesKey) ?? "GitHub.css"
+        document.previewStyle = previewStyle
     }
 
     func setPreviewStyle(_ style: String) {
         previewStyle = style
+        document.previewStyle = style
         UserDefaults.standard.set(style, forKey: stylesKey)
     }
 
@@ -123,34 +125,11 @@ final class AppState: ObservableObject {
 
     func exportHTML() {
         guard let url = document.url else { return }
-        let parser = MarkdownParser()
-        let rawHtml = parser.html(from: document.text)
-        let customCSS: String
-        if let cssURL = Bundle.main.url(forResource: previewStyle.replacingOccurrences(of: ".css", with: ""), withExtension: "css"),
-           let css = try? String(contentsOf: cssURL, encoding: .utf8) {
-            customCSS = "<style>\(css)</style>"
-        } else {
-            customCSS = "<style></style>"
-        }
-
-        let fullHTML = """
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="utf-8">
-            \(customCSS)
-        </head>
-        <body>
-            \(rawHtml)
-        </body>
-        </html>
-        """
-
         let savePanel = NSSavePanel()
         savePanel.title = "导出 HTML"
         savePanel.nameFieldStringValue = url.deletingPathExtension().lastPathComponent + ".html"
         if savePanel.runModal() == .OK, let targetURL = savePanel.url {
-            try? fullHTML.write(to: targetURL, atomically: true, encoding: .utf8)
+            try? document.html.write(to: targetURL, atomically: true, encoding: .utf8)
         }
     }
 
@@ -385,18 +364,55 @@ final class AppState: ObservableObject {
 
 final class DocumentModel: ObservableObject {
     @Published private(set) var url: URL?
-    @Published var text: String = ""
-    @Published private(set) var isLoading = false
+    @Published var text: String = "" {
+        didSet { renderHTML() }
+    }
     @Published private(set) var isDirty = false
+    @Published private(set) var html: String = ""
+    @Published var previewStyle: String = "GitHub.css" {
+        didSet { renderHTML() }
+    }
 
     private var saveTask: Task<Void, Never>?
     private var isSettingInitialText = false
+    private let parser = MarkdownParser()
+
+    private func loadCSS(for style: String) -> String {
+        guard let url = Bundle.main.url(forResource: style.replacingOccurrences(of: ".css", with: ""), withExtension: "css"),
+              let css = try? String(contentsOf: url, encoding: .utf8) else {
+            return "<style></style>"
+        }
+        return "<style>\(css)</style>"
+    }
+
+    func renderHTML(style: String) {
+        guard !text.isEmpty else {
+            html = ""
+            return
+        }
+        let rawHtml = parser.html(from: text)
+        let customCSS = loadCSS(for: style)
+        html = """
+        <html>
+        <head>
+            <meta charset="utf-8">
+            \(customCSS)
+        </head>
+        <body>
+            \(rawHtml)
+        </body>
+        </html>
+        """
+    }
+
+    private func renderHTML() {
+        renderHTML(style: previewStyle)
+    }
 
     func open(url: URL) {
         if self.url == url { return }
 
         self.url = url
-        isLoading = true
         isSettingInitialText = true
 
         do {
@@ -406,7 +422,6 @@ final class DocumentModel: ObservableObject {
         }
 
         isSettingInitialText = false
-        isLoading = false
         isDirty = false
     }
 
