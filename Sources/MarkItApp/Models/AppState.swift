@@ -53,6 +53,10 @@ final class AppState: ObservableObject {
         rebuildTree()
     }
 
+    func openFile(_ url: URL) {
+        _ = requestSwitch(to: url)
+    }
+
     func promptOpenFolder() {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
