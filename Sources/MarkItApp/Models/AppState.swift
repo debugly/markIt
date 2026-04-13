@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import Ink
 
 final class AppState: ObservableObject {
     @Published var rootFolders: [URL] = [] {
@@ -102,6 +103,55 @@ final class AppState: ObservableObject {
     func openFile(_ url: URL) {
         addToRecentFiles(url)
         _ = requestSwitch(to: url)
+    }
+
+    func createNewFile() {
+        if let firstFolder = rootFolders.first {
+            let timestamp = DateFormatter.localizedString(from: Date(), dateStyle: .short, timeStyle: .short)
+                .replacingOccurrences(of: "/", with: "-")
+                .replacingOccurrences(of: ":", with: "-")
+            let fileName = "新建文件 \(timestamp).md"
+            let url = firstFolder.appendingPathComponent(fileName)
+            if fileManager.createFile(atPath: url.path, contents: Data()) {
+                document.open(url: url)
+                refresh()
+            }
+        } else {
+            promptOpenFolder()
+        }
+    }
+
+    func exportHTML() {
+        guard let url = document.url else { return }
+        let parser = MarkdownParser()
+        let rawHtml = parser.html(from: document.text)
+        let customCSS: String
+        if let cssURL = Bundle.main.url(forResource: previewStyle.replacingOccurrences(of: ".css", with: ""), withExtension: "css"),
+           let css = try? String(contentsOf: cssURL, encoding: .utf8) {
+            customCSS = "<style>\(css)</style>"
+        } else {
+            customCSS = "<style></style>"
+        }
+
+        let fullHTML = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            \(customCSS)
+        </head>
+        <body>
+            \(rawHtml)
+        </body>
+        </html>
+        """
+
+        let savePanel = NSSavePanel()
+        savePanel.title = "导出 HTML"
+        savePanel.nameFieldStringValue = url.deletingPathExtension().lastPathComponent + ".html"
+        if savePanel.runModal() == .OK, let targetURL = savePanel.url {
+            try? fullHTML.write(to: targetURL, atomically: true, encoding: .utf8)
+        }
     }
 
     private func addToRecentFiles(_ url: URL) {

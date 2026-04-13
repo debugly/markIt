@@ -58,6 +58,11 @@ struct MarkItApp: App {
         }
         .commands {
             CommandGroup(replacing: .newItem) {
+                Button("新建文件") {
+                    state.createNewFile()
+                }
+                .keyboardShortcut("n", modifiers: .command)
+
                 Button("打开文件...") {
                     state.openFilePanel()
                 }
@@ -67,6 +72,14 @@ struct MarkItApp: App {
                     state.promptOpenFolder()
                 }
                 .keyboardShortcut("o", modifiers: [.command, .shift])
+
+                Divider()
+
+                Button("导出 HTML...") {
+                    state.exportHTML()
+                }
+                .keyboardShortcut("e", modifiers: [.command, .shift])
+                .disabled(state.document.url == nil)
 
                 Divider()
 
