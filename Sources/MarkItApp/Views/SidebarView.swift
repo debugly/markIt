@@ -12,7 +12,7 @@ struct SidebarView: View {
         VStack(spacing: 0) {
             List(selection: $state.selection) {
                 OutlineGroup(state.tree, children: \.children) { node in
-                    Label(node.name, systemImage: node.isDirectory ? "folder" : "doc.text")
+                    Label(node.displayName, systemImage: node.isDirectory ? "folder" : "doc.text")
                         .tag(node)
                         .contextMenu {
                             if node.isDirectory {
