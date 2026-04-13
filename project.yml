@@ -7,8 +7,9 @@ options:
 
 packages:
   Ink:
-    url: https://github.com/JohnSundell/Ink.git
-    from: 0.6.0
+    path: ../Ink
+    # url: https://github.com/JohnSundell/Ink.git
+    # from: 0.6.0
 
 targets:
   Markit:
