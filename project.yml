@@ -16,9 +16,7 @@ targets:
     platform: macOS
     sources:
       - path: Sources/MarkItApp
-    resources:
       - path: Resources
-      - path: Sources/MarkItApp/Styles
     dependencies:
       - package: Ink
     settings:
