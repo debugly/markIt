@@ -13,7 +13,9 @@ final class AppState: ObservableObject {
     @Published var showEditor = true
     @Published var showPreview = true
     @Published var showUnsavedAlert = false
-    @Published var previewStyle: String = "GitHub.css"
+    @Published var previewStyle: String = "GitHub.css" {
+        didSet { document.previewStyle = previewStyle }
+    }
 
     let document = DocumentModel()
     private let stylesKey = "MarkIt.PreviewStyle"
@@ -64,12 +66,10 @@ final class AppState: ObservableObject {
 
     private func restorePreviewStyle() {
         previewStyle = UserDefaults.standard.string(forKey: stylesKey) ?? "GitHub.css"
-        document.previewStyle = previewStyle
     }
 
     func setPreviewStyle(_ style: String) {
         previewStyle = style
-        document.previewStyle = style
         UserDefaults.standard.set(style, forKey: stylesKey)
     }
 
