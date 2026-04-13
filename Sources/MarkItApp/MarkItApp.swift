@@ -18,7 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 @main
 struct MarkItApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @StateObject private var state: AppState
+    @StateObject private var state = AppState()
 
     init() {
         let state = AppState()
@@ -55,6 +55,36 @@ struct MarkItApp: App {
             ContentView(state: state)
                 .frame(minWidth: 980, minHeight: 640)
                 .handlesExternalEvents(preferring: Set(["*"]), allowing: Set(["*"]))
+        }
+        .commands {
+            CommandGroup(replacing: .newItem) {
+                Button("打开文件...") {
+                    state.openFilePanel()
+                }
+                .keyboardShortcut("o", modifiers: .command)
+
+                Button("打开文件夹...") {
+                    state.promptOpenFolder()
+                }
+                .keyboardShortcut("o", modifiers: [.command, .shift])
+
+                Divider()
+
+                Menu("最近打开") {
+                    ForEach(state.recentFiles, id: \.self) { url in
+                        Button(url.lastPathComponent) {
+                            state.openFile(url)
+                        }
+                    }
+                    if !state.recentFiles.isEmpty {
+                        Divider()
+                        Button("清除最近文件") {
+                            state.clearRecentFiles()
+                        }
+                    }
+                }
+                .disabled(state.recentFiles.isEmpty)
+            }
         }
         .windowStyle(.hiddenTitleBar)
     }

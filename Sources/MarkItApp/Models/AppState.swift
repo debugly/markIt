@@ -18,6 +18,8 @@ final class AppState: ObservableObject {
     private let stylesKey = "MarkIt.PreviewStyle"
     private let fileManager = FileManager.default
     private let bookmarksKey = "MarkIt.Bookmarks"
+    private let recentFilesKey = "MarkIt.RecentFiles"
+    @Published var recentFiles: [URL] = []
     private var lastSelectedFile: FileNode? = nil
     private var isAdjustingSelection = false
     private var pendingSwitchURL: URL? = nil
@@ -25,7 +27,38 @@ final class AppState: ObservableObject {
     init() {
         restoreBookmarks()
         restorePreviewStyle()
+        restoreRecentFiles()
         rebuildTree()
+    }
+
+    private func restoreRecentFiles() {
+        if let data = UserDefaults.standard.data(forKey: recentFilesKey),
+           let urls = try? JSONDecoder().decode([URL].self, from: data) {
+            recentFiles = urls.filter { fileManager.fileExists(atPath: $0.path) }
+        }
+    }
+
+    private func saveRecentFiles() {
+        if let data = try? JSONEncoder().encode(recentFiles) {
+            UserDefaults.standard.set(data, forKey: recentFilesKey)
+        }
+    }
+
+    func clearRecentFiles() {
+        recentFiles = []
+        saveRecentFiles()
+    }
+
+    func openFilePanel() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.init(filenameExtension: "md")!, .init(filenameExtension: "markdown")!]
+        panel.title = "打开文件"
+        if panel.runModal() == .OK, let url = panel.url {
+            openFile(url)
+        }
     }
 
     private func restorePreviewStyle() {
@@ -54,7 +87,17 @@ final class AppState: ObservableObject {
     }
 
     func openFile(_ url: URL) {
+        addToRecentFiles(url)
         _ = requestSwitch(to: url)
+    }
+
+    private func addToRecentFiles(_ url: URL) {
+        recentFiles.removeAll { $0 == url }
+        recentFiles.insert(url, at: 0)
+        if recentFiles.count > 10 {
+            recentFiles = Array(recentFiles.prefix(10))
+        }
+        saveRecentFiles()
     }
 
     func promptOpenFolder() {
