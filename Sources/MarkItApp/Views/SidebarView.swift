@@ -21,6 +21,7 @@ struct SidebarView: View {
                                 Button("修改文件夹名") { openPrompt(.rename(target: node.url)) }
                                 Divider()
                                 Button("刷新") { state.refresh() }
+                                Button("移除书签") { state.removeRootFolder(node.url) }
                                 Button("在 Finder 中显示") { state.revealInFinder(node.url) }
                             } else {
                                 Button("修改文件名") { openPrompt(.rename(target: node.url)) }

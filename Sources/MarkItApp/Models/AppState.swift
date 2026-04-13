@@ -78,6 +78,19 @@ final class AppState: ObservableObject {
         }
     }
 
+    func removeRootFolder(_ url: URL) {
+        rootFolders.removeAll { $0 == url }
+        rebuildTree()
+        removeBookmark(for: url)
+    }
+
+    private func removeBookmark(for url: URL) {
+        guard let data = try? url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil) else { return }
+        var existing = UserDefaults.standard.array(forKey: bookmarksKey) as? [Data] ?? []
+        existing.removeAll { $0 == data }
+        UserDefaults.standard.set(existing, forKey: bookmarksKey)
+    }
+
     func rebuildTree() {
         tree = rootFolders.map { FileNodeBuilder.buildTree(for: $0) }
     }
