@@ -55,6 +55,9 @@ struct MarkItApp: App {
             ContentView(state: state)
                 .frame(minWidth: 980, minHeight: 640)
                 .handlesExternalEvents(preferring: Set(["*"]), allowing: Set(["*"]))
+                .onAppear {
+                    NSApp.windows.forEach { $0.tabbingMode = .disallowed }
+                }
         }
         .commands {
             CommandGroup(replacing: .newItem) {
@@ -98,7 +101,7 @@ struct MarkItApp: App {
                 }
                 .disabled(state.recentFiles.isEmpty)
             }
-            CommandGroup(after: .toolbar) {
+            CommandGroup(replacing: .toolbar) {
                 Button("显示/隐藏目录") {
                     state.showSidebar.toggle()
                 }
