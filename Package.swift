@@ -15,6 +15,21 @@ let package = Package(
             name: "MarkItApp",
             dependencies: [
                 .product(name: "Ink", package: "Ink")
+            ],
+            path: ".",
+            exclude: [
+                "project.yml",
+                "Markit.xcodeproj",
+                "Resources/Info.plist",
+                "Resources/playstore.png",
+                "Resources/appstore.png",
+            ],
+            sources: [
+                "Sources/MarkItApp"
+            ],
+            resources: [
+                .copy("Resources/Styles"),
+                .process("Resources/AppIcon.xcassets")
             ]
         )
     ]
