@@ -101,19 +101,25 @@ struct MarkItApp: App {
                 }
                 .disabled(state.recentFiles.isEmpty)
             }
-            CommandGroup(replacing: .toolbar) {
-                Button("显示/隐藏目录") {
+            CommandGroup(after: .toolbar) {
+                Button {
                     state.showSidebar.toggle()
+                } label: {
+                    Label("显示/隐藏目录", systemImage: "sidebar.leading")
                 }
                 .keyboardShortcut("1", modifiers: [.command, .option])
 
-                Button("显示/隐藏编辑器") {
+                Button {
                     state.showEditor.toggle()
+                } label: {
+                    Label("显示/隐藏编辑器", systemImage: "square.and.pencil")
                 }
                 .keyboardShortcut("2", modifiers: [.command, .option])
 
-                Button("显示/隐藏预览") {
+                Button {
                     state.showPreview.toggle()
+                } label: {
+                    Label("显示/隐藏预览", systemImage: "doc.richtext")
                 }
                 .keyboardShortcut("3", modifiers: [.command, .option])
             }
