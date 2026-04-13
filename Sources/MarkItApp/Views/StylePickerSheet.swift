@@ -43,9 +43,10 @@ struct StylePickerSheet: View {
         }
         let directory = url.deletingLastPathComponent()
         if let contents = try? FileManager.default.contentsOfDirectory(atPath: directory.path) {
-            availableStyles = contents
+            let styles = contents
                 .filter { $0.hasSuffix(".css") }
                 .sorted()
+            availableStyles = ["无"] + styles
             selectedStyle = state.previewStyle
         }
     }

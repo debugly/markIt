@@ -378,7 +378,8 @@ final class DocumentModel: ObservableObject {
     private let parser = MarkdownParser()
 
     private func loadCSS(for style: String) -> String {
-        guard let url = Bundle.main.url(forResource: style.replacingOccurrences(of: ".css", with: ""), withExtension: "css"),
+        guard style != "无",
+              let url = Bundle.main.url(forResource: style.replacingOccurrences(of: ".css", with: ""), withExtension: "css"),
               let css = try? String(contentsOf: url, encoding: .utf8) else {
             return "<style></style>"
         }
