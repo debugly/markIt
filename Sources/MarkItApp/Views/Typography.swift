@@ -2,5 +2,5 @@ import AppKit
 import Foundation
 
 enum Typography {
-    static let editorFontSize: CGFloat = NSFont.systemFontSize + 3
+    static let editorFontSize: CGFloat = NSFont.systemFontSize + 4
 }

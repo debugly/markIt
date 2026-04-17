@@ -100,7 +100,7 @@ enum FileNodeBuilder {
                     if lhs.isDirectory != rhs.isDirectory {
                         return lhs.isDirectory && !rhs.isDirectory
                     }
-                    return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+                    return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedDescending
                 }
 
             return FileNode(url: url, isDirectory: true, children: children)
