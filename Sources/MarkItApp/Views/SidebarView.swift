@@ -301,6 +301,9 @@ private struct SidebarRowLabel: View {
     var body: some View {
         HStack(spacing: 0) {
             Label(node.displayName, systemImage: node.isDirectory ? "folder" : "doc.text")
+                .font(.system(size: 14))
+                .lineLimit(1)
+                .truncationMode(.tail)
             Spacer(minLength: 0)
         }
             .padding(.leading, 3)
