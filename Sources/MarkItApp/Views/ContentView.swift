@@ -26,9 +26,6 @@ struct ContentView: View {
                 break
             }
         }
-        .onChange(of: state.selection) { newValue in
-            state.handleSelection(newValue)
-        }
         .onChange(of: state.showSidebar) { _ in state.closeWindowIfNeeded() }
         .onChange(of: state.showEditor) { _ in state.closeWindowIfNeeded() }
         .onChange(of: state.showPreview) { _ in state.closeWindowIfNeeded() }

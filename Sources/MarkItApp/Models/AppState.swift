@@ -1,12 +1,13 @@
 import AppKit
 import Foundation
+import UniformTypeIdentifiers
 
 final class AppState: ObservableObject {
     @Published var rootFolders: [URL] = [] {
         didSet { rebuildTree() }
     }
     @Published var tree: [FileNode] = []
-    @Published var selection: FileNode? = nil
+    @Published var selection: URL? = nil
 
     @Published var showSidebar = true
     @Published var showEditor = true
@@ -22,7 +23,8 @@ final class AppState: ObservableObject {
     private let bookmarksKey = "MarkIt.Bookmarks"
     private let recentFilesKey = "MarkIt.RecentFiles"
     @Published var recentFiles: [URL] = []
-    private var lastSelectedFile: FileNode? = nil
+    private var activeSecurityScopedRoots: Set<URL> = []
+    private var lastSelectedFileURL: URL? = nil
     private var isAdjustingSelection = false
     private var pendingSwitchURL: URL? = nil
 
@@ -74,6 +76,7 @@ final class AppState: ObservableObject {
 
     func addRootFolder(_ url: URL, storeBookmark: Bool = false) {
         guard rootFolders.contains(url) == false else { return }
+        beginAccessingRootFolder(url)
         rootFolders.append(url)
         if storeBookmark {
             persistBookmark(for: url)
@@ -81,6 +84,7 @@ final class AppState: ObservableObject {
     }
 
     func removeRootFolder(_ url: URL) {
+        endAccessingRootFolder(url)
         rootFolders.removeAll { $0 == url }
         rebuildTree()
         removeBookmark(for: url)
@@ -152,12 +156,14 @@ final class AppState: ObservableObject {
         }
     }
 
-    func handleSelection(_ node: FileNode?) {
+    func selectNode(_ node: FileNode) {
         guard isAdjustingSelection == false else { return }
-        guard let node else { return }
+
+        selection = node.url
         guard node.isDirectory == false else { return }
+
         if requestSwitch(to: node.url) {
-            lastSelectedFile = node
+            lastSelectedFileURL = node.url
         }
     }
 
@@ -195,15 +201,7 @@ final class AppState: ObservableObject {
         guard trimmed.isEmpty == false else { return }
         let target = url.deletingLastPathComponent().appendingPathComponent(trimmed, isDirectory: url.hasDirectoryPath)
         guard target != url else { return }
-        do {
-            try fileManager.moveItem(at: url, to: target)
-            if document.url == url {
-                document.updateURL(target)
-            }
-            refresh()
-        } catch {
-            return
-        }
+        _ = relocateItem(at: url, to: target)
     }
 
     func duplicateFile(at url: URL, newName: String) {
@@ -232,6 +230,39 @@ final class AppState: ObservableObject {
 
     func revealInFinder(_ url: URL) {
         NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
+    func moveDroppedItems(from providers: [NSItemProvider], to destinationDirectory: URL) -> Bool {
+        let fileURLType = UTType.fileURL.identifier
+        let matchingProviders = providers.filter { $0.hasItemConformingToTypeIdentifier(fileURLType) }
+        guard matchingProviders.isEmpty == false else { return false }
+
+        for provider in matchingProviders {
+            provider.loadDataRepresentation(forTypeIdentifier: fileURLType) { [weak self] data, _ in
+                guard let self, let data else { return }
+                guard let url = URL(dataRepresentation: data, relativeTo: nil) else { return }
+
+                DispatchQueue.main.async {
+                    self.moveItem(at: url, toDirectory: destinationDirectory)
+                }
+            }
+        }
+
+        return true
+    }
+
+    @discardableResult
+    func moveItem(at sourceURL: URL, toDirectory destinationDirectory: URL) -> Bool {
+        guard fileExists(at: sourceURL) else { return false }
+        guard isDirectory(at: destinationDirectory) else { return false }
+        guard sourceURL != destinationDirectory else { return false }
+
+        if sourceURL.hasDirectoryPath, isSameOrDescendant(destinationDirectory, of: sourceURL) {
+            return false
+        }
+
+        let targetURL = destinationDirectory.appendingPathComponent(sourceURL.lastPathComponent, isDirectory: sourceURL.hasDirectoryPath)
+        return relocateItem(at: sourceURL, to: targetURL)
     }
 
     func requestSwitch(to url: URL) -> Bool {
@@ -316,6 +347,13 @@ final class AppState: ObservableObject {
         }
     }
 
+    private func saveBookmarks() {
+        let bookmarks = rootFolders.compactMap {
+            try? $0.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
+        }
+        UserDefaults.standard.set(bookmarks, forKey: bookmarksKey)
+    }
+
     private func restoreBookmarks() {
         let stored = UserDefaults.standard.array(forKey: bookmarksKey) as? [Data] ?? []
         var resolved: [URL] = []
@@ -327,7 +365,7 @@ final class AppState: ObservableObject {
                 relativeTo: nil,
                 bookmarkDataIsStale: &isStale
             ) {
-                _ = url.startAccessingSecurityScopedResource()
+                beginAccessingRootFolder(url)
                 resolved.append(url)
             }
         }
@@ -336,13 +374,13 @@ final class AppState: ObservableObject {
 
     private func revertSelection() {
         isAdjustingSelection = true
-        selection = lastSelectedFile
+        selection = lastSelectedFileURL
         isAdjustingSelection = false
     }
 
     private func updateLastSelectionIfPossible() {
-        if let node = selection, node.isDirectory == false {
-            lastSelectedFile = node
+        if let url = selection, let node = findNode(matching: url, in: tree), node.isDirectory == false {
+            lastSelectedFileURL = url
         }
     }
 
@@ -358,5 +396,128 @@ final class AppState: ObservableObject {
             let response = panel.runModal()
             completion(response == .OK ? panel.url : nil)
         }
+    }
+
+    private func beginAccessingRootFolder(_ url: URL) {
+        let normalizedURL = url.standardizedFileURL
+        guard activeSecurityScopedRoots.contains(normalizedURL) == false else { return }
+        if normalizedURL.startAccessingSecurityScopedResource() {
+            activeSecurityScopedRoots.insert(normalizedURL)
+        }
+    }
+
+    private func endAccessingRootFolder(_ url: URL) {
+        let normalizedURL = url.standardizedFileURL
+        guard activeSecurityScopedRoots.contains(normalizedURL) else { return }
+        normalizedURL.stopAccessingSecurityScopedResource()
+        activeSecurityScopedRoots.remove(normalizedURL)
+    }
+
+    private func updateSecurityScopedRootAccess(from oldRoots: [URL], to newRoots: [URL]) {
+        let oldSet = Set(oldRoots.map(\.standardizedFileURL))
+        let newSet = Set(newRoots.map(\.standardizedFileURL))
+
+        for url in oldSet.subtracting(newSet) {
+            endAccessingRootFolder(url)
+        }
+
+        for url in newSet.subtracting(oldSet) {
+            beginAccessingRootFolder(url)
+        }
+    }
+
+    @discardableResult
+    private func relocateItem(at sourceURL: URL, to targetURL: URL) -> Bool {
+        guard fileExists(at: sourceURL) else { return false }
+        guard targetURL != sourceURL else { return false }
+        guard fileExists(at: targetURL) == false else { return false }
+
+        if let documentURL = document.url, isSameOrDescendant(documentURL, of: sourceURL) {
+            _ = document.saveIfDirty()
+        }
+
+        let selectionURL = updatedURLAfterMove(for: selection, from: sourceURL, to: targetURL)
+        let lastSelectedURL = updatedURLAfterMove(for: lastSelectedFileURL, from: sourceURL, to: targetURL)
+        let documentURL = updatedURLAfterMove(for: document.url, from: sourceURL, to: targetURL)
+        let updatedRecentFiles = recentFiles.map { updatedURLAfterMove(for: $0, from: sourceURL, to: targetURL) ?? $0 }
+        let updatedRootFolders = rootFolders.map { updatedURLAfterMove(for: $0, from: sourceURL, to: targetURL) ?? $0 }
+
+        do {
+            try fileManager.moveItem(at: sourceURL, to: targetURL)
+        } catch {
+            return false
+        }
+
+        recentFiles = updatedRecentFiles.filter { fileExists(at: $0) }
+        saveRecentFiles()
+
+        let rootsChanged = updatedRootFolders != rootFolders
+        if rootsChanged {
+            updateSecurityScopedRootAccess(from: rootFolders, to: updatedRootFolders)
+            rootFolders = updatedRootFolders
+            saveBookmarks()
+        } else {
+            rebuildTree()
+        }
+
+        if let documentURL {
+            document.updateURL(documentURL)
+        }
+
+        syncSelection(selectionURL: selectionURL ?? selection, lastSelectedURL: lastSelectedURL ?? lastSelectedFileURL)
+        return true
+    }
+
+    private func syncSelection(selectionURL: URL?, lastSelectedURL: URL?) {
+        isAdjustingSelection = true
+        selection = selectionURL
+        isAdjustingSelection = false
+        lastSelectedFileURL = lastSelectedURL
+    }
+
+    private func updatedURLAfterMove(for url: URL?, from sourceRoot: URL, to targetRoot: URL) -> URL? {
+        guard let url else { return nil }
+        guard let relativePath = relativePath(of: url, from: sourceRoot) else { return nil }
+        guard relativePath.isEmpty == false else { return targetRoot }
+        return relativePath.reduce(targetRoot) { partialResult, component in
+            partialResult.appendingPathComponent(component)
+        }
+    }
+
+    private func relativePath(of url: URL, from baseURL: URL) -> [String]? {
+        let normalizedURL = url.standardizedFileURL
+        let normalizedBase = baseURL.standardizedFileURL
+        let urlComponents = normalizedURL.pathComponents
+        let baseComponents = normalizedBase.pathComponents
+
+        guard urlComponents.count >= baseComponents.count else { return nil }
+        guard Array(urlComponents.prefix(baseComponents.count)) == baseComponents else { return nil }
+        return Array(urlComponents.dropFirst(baseComponents.count))
+    }
+
+    private func isSameOrDescendant(_ url: URL, of baseURL: URL) -> Bool {
+        relativePath(of: url, from: baseURL) != nil
+    }
+
+    private func isDirectory(at url: URL) -> Bool {
+        (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
+    }
+
+    private func fileExists(at url: URL) -> Bool {
+        fileManager.fileExists(atPath: url.path)
+    }
+
+    private func findNode(matching url: URL, in nodes: [FileNode]) -> FileNode? {
+        for node in nodes {
+            if node.url == url {
+                return node
+            }
+
+            if let children = node.children, let match = findNode(matching: url, in: children) {
+                return match
+            }
+        }
+
+        return nil
     }
 }

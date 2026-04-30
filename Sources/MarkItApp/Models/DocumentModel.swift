@@ -63,6 +63,7 @@ final class DocumentModel: ObservableObject {
     func open(url: URL) {
         if self.url == url { return }
 
+        saveTask?.cancel()
         self.url = url
         isSettingInitialText = true
 
@@ -91,10 +92,15 @@ final class DocumentModel: ObservableObject {
     }
 
     func updateURL(_ newURL: URL) {
+        saveTask?.cancel()
         url = newURL
+        if isDirty {
+            scheduleSave()
+        }
     }
 
     func clear() {
+        saveTask?.cancel()
         url = nil
         text = ""
         isDirty = false
@@ -124,6 +130,7 @@ final class DocumentModel: ObservableObject {
 
     @discardableResult
     func saveNow(to url: URL) -> Bool {
+        saveTask?.cancel()
         do {
             try text.write(to: url, atomically: true, encoding: .utf8)
             isDirty = false
