@@ -97,40 +97,6 @@ private struct FormattingGlyphView: View {
     }
 }
 
-private struct FormattingToolbarView: View {
-    let onAction: (FormattingAction) -> Void
-    private let columns = [
-        GridItem(.adaptive(minimum: 30, maximum: 30), spacing: 8)
-    ]
-
-    var body: some View {
-        LazyVGrid(columns: columns, spacing: 8) {
-            ForEach(FormattingAction.allCases, id: \.self) { action in
-                toolbarButton(for: action)
-            }
-        }
-        .padding(10)
-    }
-
-    private func toolbarButton(for action: FormattingAction) -> some View {
-        Button {
-            onAction(action)
-        } label: {
-            FormattingGlyphView(action: action, size: 30)
-        }
-        .buttonStyle(.plain)
-        .background(buttonBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-        .contentShape(RoundedRectangle(cornerRadius: 6))
-        .help(action.title)
-        .accessibilityLabel(Text(action.title))
-    }
-
-    private var buttonBackground: some View {
-        Color(nsColor: .controlBackgroundColor)
-    }
-}
-
 private struct SlashCommandListView: View {
     @ObservedObject var model: SlashCommandMenuModel
     let onAction: (FormattingAction) -> Void
@@ -267,52 +233,6 @@ private struct MarkdownEditorTextView: NSViewRepresentable {
         textView.onInlineCodeShortcut = { context.coordinator.wrapSelection(using: $0, with: "`") }
         textView.onCodeBlockShortcut = { context.coordinator.wrapSelectionLinesInCodeBlock(using: $0) }
         textView.onTableShortcut = { context.coordinator.insertTable(using: $0) }
-        textView.onFormattingAction = { textView, action in
-            switch action {
-            case .bold:
-                context.coordinator.wrapSelection(using: textView, with: "**")
-            case .italic:
-                context.coordinator.wrapSelection(using: textView, with: "*")
-            case .underline:
-                context.coordinator.wrapSelection(using: textView, prefix: "<u>", suffix: "</u>")
-            case .inlineCode:
-                context.coordinator.wrapSelection(using: textView, with: "`")
-            case .strikethrough:
-                context.coordinator.wrapSelection(using: textView, with: "~~")
-            case .link:
-                context.coordinator.insertLink(using: textView)
-            case .heading1:
-                context.coordinator.prefixSelectedLines(using: textView) { _, line in
-                    context.coordinator.prepending("# ", to: line)
-                }
-            case .heading2:
-                context.coordinator.prefixSelectedLines(using: textView) { _, line in
-                    context.coordinator.prepending("## ", to: line)
-                }
-            case .heading3:
-                context.coordinator.prefixSelectedLines(using: textView) { _, line in
-                    context.coordinator.prepending("### ", to: line)
-                }
-            case .quote:
-                context.coordinator.prefixSelectedLines(using: textView) { _, line in
-                    context.coordinator.prepending("> ", to: line)
-                }
-            case .bulletList:
-                context.coordinator.prefixSelectedLines(using: textView) { _, line in
-                    context.coordinator.prepending("- ", to: line)
-                }
-            case .orderedList:
-                context.coordinator.prefixSelectedLines(using: textView) { index, line in
-                    context.coordinator.prepending("\(index + 1). ", to: line)
-                }
-            case .taskList:
-                context.coordinator.prefixSelectedLines(using: textView) { _, line in
-                    context.coordinator.prepending("- [ ] ", to: line)
-                }
-            case .codeBlock:
-                context.coordinator.wrapSelectionLinesInCodeBlock(using: textView)
-            }
-        }
 
         scrollView.documentView = textView
         return scrollView
@@ -325,11 +245,7 @@ private struct MarkdownEditorTextView: NSViewRepresentable {
         context.coordinator.isUpdatingFromSwiftUI = true
         let currentSelection = textView.selectedRange()
         textView.string = text
-        context.coordinator.isUpdatingSelectionProgrammatically = true
         textView.setSelectedRange(clamp(range: currentSelection, to: textView.string))
-        DispatchQueue.main.async {
-            context.coordinator.isUpdatingSelectionProgrammatically = false
-        }
         context.coordinator.isUpdatingFromSwiftUI = false
     }
 
@@ -343,7 +259,6 @@ private struct MarkdownEditorTextView: NSViewRepresentable {
     final class Coordinator: NSObject, NSTextViewDelegate {
         @Binding private var text: String
         var isUpdatingFromSwiftUI = false
-        var isUpdatingSelectionProgrammatically = false
         weak var textView: MarkdownNSTextView?
 
         init(text: Binding<String>) {
@@ -354,11 +269,6 @@ private struct MarkdownEditorTextView: NSViewRepresentable {
             guard isUpdatingFromSwiftUI == false,
                   let textView = notification.object as? NSTextView else { return }
             text = textView.string
-        }
-
-        func textViewDidChangeSelection(_ notification: Notification) {
-            guard isUpdatingSelectionProgrammatically == false else { return }
-            textView?.handleSelectionChange()
         }
 
         func wrapSelection(using textView: NSTextView, with marker: String) {
@@ -509,11 +419,7 @@ private struct MarkdownEditorTextView: NSViewRepresentable {
         }
 
         private func setSelection(_ range: NSRange, in textView: NSTextView) {
-            isUpdatingSelectionProgrammatically = true
             textView.setSelectedRange(range)
-            DispatchQueue.main.async { [weak self] in
-                self?.isUpdatingSelectionProgrammatically = false
-            }
         }
 
         func apply(_ action: FormattingAction, using textView: NSTextView) {
@@ -571,29 +477,13 @@ private final class MarkdownNSTextView: NSTextView {
     var onInlineCodeShortcut: ((NSTextView) -> Void)?
     var onCodeBlockShortcut: ((NSTextView) -> Void)?
     var onTableShortcut: ((NSTextView) -> Void)?
-    var onFormattingAction: ((NSTextView, FormattingAction) -> Void)?
     weak var actionCoordinator: MarkdownEditorTextView.Coordinator?
 
-    private var selectionAtMouseDown = NSRange(location: NSNotFound, length: 0)
-    private var popoverSelection = NSRange(location: NSNotFound, length: 0)
-    private var pendingSelectionToShow = NSRange(location: NSNotFound, length: 0)
     private var commandTriggerRange = NSRange(location: NSNotFound, length: 0)
     private var commandTriggerText: String?
     private let slashCommandModel = SlashCommandMenuModel()
     private var slashCommandHostView: NSHostingView<SlashCommandListView>?
     private var localKeyMonitor: Any?
-    private lazy var formattingPopover: NSPopover = {
-        let popover = NSPopover()
-        popover.behavior = .transient
-        popover.animates = false
-        popover.contentSize = NSSize(width: 290, height: 110)
-        popover.contentViewController = NSHostingController(
-            rootView: FormattingToolbarView { [weak self] action in
-                self?.applyFormattingAction(action)
-            }
-        )
-        return popover
-    }()
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if handleEscapeIfNeeded(for: event) {
@@ -614,8 +504,6 @@ private final class MarkdownNSTextView: NSTextView {
         if handleEscapeIfNeeded(for: event) {
             return
         }
-
-        closeFormattingToolbar()
 
         if slashCommandHostView != nil {
             switch Int(event.keyCode) {
@@ -681,9 +569,7 @@ private final class MarkdownNSTextView: NSTextView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        closeFormattingToolbar()
         closeSlashCommandMenu()
-        selectionAtMouseDown = selectedRange()
         super.mouseDown(with: event)
     }
 
@@ -692,34 +578,9 @@ private final class MarkdownNSTextView: NSTextView {
     }
 
     override func resignFirstResponder() -> Bool {
-        closeFormattingToolbar()
         closeSlashCommandMenu()
         removeLocalKeyMonitorIfNeeded()
         return super.resignFirstResponder()
-    }
-
-    private func showFormattingToolbar(for selection: NSRange) {
-        guard let window else { return }
-
-        popoverSelection = selection
-        if formattingPopover.isShown {
-            formattingPopover.close()
-        }
-        installLocalKeyMonitorIfNeeded()
-
-        let screenRect = firstRect(forCharacterRange: selection, actualRange: nil)
-        let anchorInWindow = window.convertFromScreen(screenRect)
-        let anchorInView = convert(anchorInWindow, from: nil)
-        formattingPopover.show(relativeTo: anchorInView, of: self, preferredEdge: .maxY)
-    }
-
-    private func closeFormattingToolbar() {
-        if formattingPopover.isShown {
-            formattingPopover.close()
-        }
-        popoverSelection = NSRange(location: NSNotFound, length: 0)
-        pendingSelectionToShow = NSRange(location: NSNotFound, length: 0)
-        removeLocalKeyMonitorIfNeeded()
     }
 
     private func showSlashCommandMenu(triggerText: String) {
@@ -761,17 +622,6 @@ private final class MarkdownNSTextView: NSTextView {
         removeLocalKeyMonitorIfNeeded()
     }
 
-    private func applyFormattingAction(_ action: FormattingAction) {
-        window?.makeFirstResponder(self)
-
-        if popoverSelection.location != NSNotFound {
-            setSelectedRange(popoverSelection)
-        }
-
-        onFormattingAction?(self, action)
-        closeFormattingToolbar()
-    }
-
     private func applySlashCommand(_ action: FormattingAction) {
         window?.makeFirstResponder(self)
 
@@ -811,27 +661,6 @@ private final class MarkdownNSTextView: NSTextView {
         }
     }
 
-    func handleSelectionChange() {
-        let selection = selectedRange()
-
-        guard window?.firstResponder === self,
-              selection.location != NSNotFound,
-              selection.length > 0,
-              selection != selectionAtMouseDown else {
-            if selection.length == 0 {
-                closeFormattingToolbar()
-            }
-            return
-        }
-
-        pendingSelectionToShow = selection
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            guard self.pendingSelectionToShow == self.selectedRange() else { return }
-            self.showFormattingToolbar(for: self.pendingSelectionToShow)
-        }
-    }
-
     private func installLocalKeyMonitorIfNeeded() {
         guard localKeyMonitor == nil else { return }
 
@@ -842,7 +671,7 @@ private final class MarkdownNSTextView: NSTextView {
     }
 
     private func removeLocalKeyMonitorIfNeeded() {
-        guard formattingPopover.isShown == false, slashCommandHostView == nil else { return }
+        guard slashCommandHostView == nil else { return }
         guard let localKeyMonitor else { return }
 
         NSEvent.removeMonitor(localKeyMonitor)
@@ -856,8 +685,7 @@ private final class MarkdownNSTextView: NSTextView {
 
     @discardableResult
     private func closeFloatingUIIfNeeded() -> Bool {
-        guard formattingPopover.isShown || slashCommandHostView != nil else { return false }
-        closeFormattingToolbar()
+        guard slashCommandHostView != nil else { return false }
         closeSlashCommandMenu()
         return true
     }
