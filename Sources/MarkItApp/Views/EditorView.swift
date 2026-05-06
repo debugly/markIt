@@ -245,7 +245,9 @@ private struct MarkdownEditorTextView: NSViewRepresentable {
         context.coordinator.isUpdatingFromSwiftUI = true
         let currentSelection = textView.selectedRange()
         textView.string = text
+        context.coordinator.isUpdatingSelectionProgrammatically = true
         textView.setSelectedRange(clamp(range: currentSelection, to: textView.string))
+        context.coordinator.isUpdatingSelectionProgrammatically = false
         context.coordinator.isUpdatingFromSwiftUI = false
     }
 
@@ -259,6 +261,7 @@ private struct MarkdownEditorTextView: NSViewRepresentable {
     final class Coordinator: NSObject, NSTextViewDelegate {
         @Binding private var text: String
         var isUpdatingFromSwiftUI = false
+        var isUpdatingSelectionProgrammatically = false
         weak var textView: MarkdownNSTextView?
 
         init(text: Binding<String>) {
@@ -269,6 +272,12 @@ private struct MarkdownEditorTextView: NSViewRepresentable {
             guard isUpdatingFromSwiftUI == false,
                   let textView = notification.object as? NSTextView else { return }
             text = textView.string
+        }
+
+        func textViewDidChangeSelection(_ notification: Notification) {
+            guard isUpdatingSelectionProgrammatically == false,
+                  let textView = notification.object as? NSTextView else { return }
+            copySelectionToPasteboard(using: textView)
         }
 
         func wrapSelection(using textView: NSTextView, with marker: String) {
@@ -419,7 +428,19 @@ private struct MarkdownEditorTextView: NSViewRepresentable {
         }
 
         private func setSelection(_ range: NSRange, in textView: NSTextView) {
+            isUpdatingSelectionProgrammatically = true
             textView.setSelectedRange(range)
+            isUpdatingSelectionProgrammatically = false
+        }
+
+        private func copySelectionToPasteboard(using textView: NSTextView) {
+            let selection = textView.selectedRange()
+            guard selection.location != NSNotFound, selection.length > 0 else { return }
+
+            let selectedText = (textView.string as NSString).substring(with: selection)
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            pasteboard.setString(selectedText, forType: .string)
         }
 
         func apply(_ action: FormattingAction, using textView: NSTextView) {
