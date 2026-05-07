@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -10,10 +11,13 @@ struct ContentView: View {
             if state.showSidebar {
                 SidebarView(state: state)
             }
-
             EditorPreviewContainer(state: state)
         }
         .background(.regularMaterial)
+        .background {
+            ContentGaussianBlurBackground()
+                .overlay(Color.white.opacity(0.08))
+        }
         .fileImporter(
             isPresented: $isPickingFolder,
             allowedContentTypes: [UTType.folder],
@@ -36,5 +40,23 @@ struct ContentView: View {
         } message: {
             Text("你的更改尚未保存。")
         }
+    }
+}
+
+private struct ContentGaussianBlurBackground: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.blendingMode = .behindWindow
+        view.state = .active
+        view.material = .underWindowBackground
+        view.wantsLayer = true
+        view.layer?.backgroundColor = NSColor.clear.cgColor
+        return view
+    }
+
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
+        nsView.blendingMode = .behindWindow
+        nsView.material = .underWindowBackground
+        nsView.state = .active
     }
 }
