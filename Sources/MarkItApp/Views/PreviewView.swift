@@ -31,6 +31,6 @@ struct PreviewView: View {
                 WebView(html: document.html).background(.white)
             }
         }
-        .frame(minWidth: 500, idealWidth: 500)
+        .frame(idealWidth: 500)
     }
 }

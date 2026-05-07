@@ -22,6 +22,7 @@ struct ContentView: View {
             ContentGaussianBlurBackground()
                 .overlay(Color.white.opacity(0.08))
         }
+        .background(WindowButtonAlignmentConfigurator())
         .onDrop(of: [UTType.fileURL], isTargeted: nil) { providers in
             state.openDroppedFiles(from: providers)
         }
@@ -46,6 +47,34 @@ struct ContentView: View {
             Button("取消", role: .cancel) { state.resolveUnsavedDecision(.cancel) }
         } message: {
             Text("你的更改尚未保存。")
+        }
+    }
+}
+
+private struct WindowButtonAlignmentConfigurator: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async {
+            alignWindowButtons(in: view.window)
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        DispatchQueue.main.async {
+            alignWindowButtons(in: nsView.window)
+        }
+    }
+
+    private func alignWindowButtons(in window: NSWindow?) {
+        guard let window else { return }
+
+        let buttons: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
+        for buttonType in buttons {
+            guard let button = window.standardWindowButton(buttonType) else { continue }
+            var frame = button.frame
+            frame.origin.y = 4
+            button.frame = frame
         }
     }
 }

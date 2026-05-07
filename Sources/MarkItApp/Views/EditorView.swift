@@ -175,7 +175,7 @@ struct EditorView: View {
             ))
             .background(Color(red: 255 / 255.0, green: 252 / 255.0, blue: 234 / 255.0))
         }
-        .frame(minWidth: 500, idealWidth: 500)
+        .frame(idealWidth: 500)
     }
 }
 
