@@ -87,7 +87,7 @@ private struct ToolbarPathControl: NSViewRepresentable {
         let container = NSView()
         container.clipsToBounds = true
 
-        let control = NSPathControl()
+        let control = RightClickPathControl()
         control.pathStyle = .popUp
         control.controlSize = .regular
         control.font = .systemFont(ofSize: 15, weight: .medium)
@@ -125,5 +125,14 @@ private struct ToolbarPathControl: NSViewRepresentable {
             guard let url else { return }
             NSWorkspace.shared.activateFileViewerSelecting([url])
         }
+    }
+}
+
+private final class RightClickPathControl: NSPathControl {
+    override func mouseDown(with event: NSEvent) {
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        performClick(nil)
     }
 }
