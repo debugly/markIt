@@ -7,12 +7,16 @@ struct ContentView: View {
     @State private var isPickingFolder = false
 
     var body: some View {
-        HSplitView {
-            if state.showSidebar {
-                SidebarView(state: state)
+        VStack(spacing: 0) {
+            SharedEditorToolbar(document: state.document)
+            HSplitView {
+                if state.showSidebar {
+                    SidebarView(state: state)
+                }
+                EditorPreviewContainer(state: state)
             }
-            EditorPreviewContainer(state: state)
         }
+        .ignoresSafeArea(.container, edges: .top) // 强制忽略顶部安全区域
         .background(.regularMaterial)
         .background {
             ContentGaussianBlurBackground()

@@ -16,6 +16,7 @@ struct SharedEditorToolbar: View {
 
     var body: some View {
         HStack(spacing: 12) {
+            Spacer().frame(width: 80)
             Text(fileTitle)
                 .font(.headline)
             Spacer()
