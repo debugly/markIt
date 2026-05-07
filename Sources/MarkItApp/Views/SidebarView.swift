@@ -15,6 +15,18 @@ struct SidebarView: View {
         VStack(spacing: 0) {
             ScrollView {
                 LazyVStack(spacing: 0) {
+                    if state.recentFiles.isEmpty == false {
+                        SidebarSectionHeader(title: "最近打开")
+
+                        ForEach(state.recentFiles, id: \.self) { url in
+                            RecentFileRowView(state: state, url: url)
+                        }
+
+                        if state.tree.isEmpty == false {
+                            SidebarSectionHeader(title: "文件夹")
+                        }
+                    }
+
                     ForEach(state.tree) { node in
                         SidebarTreeNodeView(
                             state: state,
@@ -163,6 +175,57 @@ struct SidebarView: View {
                     partialResult.formUnion(collectDirectoryURLs(in: children))
                 }
             }
+        }
+    }
+}
+
+private struct SidebarSectionHeader: View {
+    let title: String
+
+    var body: some View {
+        Text(title)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.secondary)
+            .textCase(.uppercase)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 8)
+            .padding(.top, 10)
+            .padding(.bottom, 4)
+    }
+}
+
+private struct RecentFileRowView: View {
+    @ObservedObject var state: AppState
+    let url: URL
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Color.clear
+                .frame(width: 18, height: 26)
+
+            Label(url.lastPathComponent, systemImage: "doc.text")
+                .font(.system(size: 14))
+                .lineLimit(1)
+                .truncationMode(.tail)
+
+            Spacer(minLength: 0)
+        }
+        .padding(.leading, 3)
+        .padding(.trailing, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(minHeight: 26, alignment: .leading)
+        .contentShape(Rectangle())
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(state.selection == url ? Color.accentColor.opacity(0.12) : .clear)
+        )
+        .onTapGesture {
+            state.openFile(url)
+        }
+        .onDrag { NSItemProvider(object: url as NSURL) }
+        .contextMenu {
+            Button("移除记录") { state.removeRecentFile(url) }
+            Button("在 Finder 中显示") { state.revealInFinder(url) }
         }
     }
 }

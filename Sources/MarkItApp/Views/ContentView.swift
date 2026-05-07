@@ -18,6 +18,9 @@ struct ContentView: View {
             ContentGaussianBlurBackground()
                 .overlay(Color.white.opacity(0.08))
         }
+        .onDrop(of: [UTType.fileURL], isTargeted: nil) { providers in
+            state.openDroppedFiles(from: providers)
+        }
         .fileImporter(
             isPresented: $isPickingFolder,
             allowedContentTypes: [UTType.folder],

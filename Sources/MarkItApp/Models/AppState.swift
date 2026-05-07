@@ -38,7 +38,7 @@ final class AppState: ObservableObject {
     private func restoreRecentFiles() {
         if let data = UserDefaults.standard.data(forKey: recentFilesKey),
            let urls = try? JSONDecoder().decode([URL].self, from: data) {
-            recentFiles = urls.filter { fileManager.fileExists(atPath: $0.path) }
+            recentFiles = urls.filter { canOpenMarkdownFile($0) }
         }
     }
 
@@ -50,6 +50,11 @@ final class AppState: ObservableObject {
 
     func clearRecentFiles() {
         recentFiles = []
+        saveRecentFiles()
+    }
+
+    func removeRecentFile(_ url: URL) {
+        recentFiles.removeAll { $0 == url }
         saveRecentFiles()
     }
 
@@ -106,8 +111,29 @@ final class AppState: ObservableObject {
     }
 
     func openFile(_ url: URL) {
+        guard canOpenMarkdownFile(url) else { return }
         addToRecentFiles(url)
+        selection = url
         _ = requestSwitch(to: url)
+    }
+
+    func openDroppedFiles(from providers: [NSItemProvider]) -> Bool {
+        let fileURLType = UTType.fileURL.identifier
+        let matchingProviders = providers.filter { $0.hasItemConformingToTypeIdentifier(fileURLType) }
+        guard matchingProviders.isEmpty == false else { return false }
+
+        for provider in matchingProviders {
+            provider.loadDataRepresentation(forTypeIdentifier: fileURLType) { [weak self] data, _ in
+                guard let self, let data else { return }
+                guard let url = URL(dataRepresentation: data, relativeTo: nil) else { return }
+
+                DispatchQueue.main.async {
+                    self.openFile(url)
+                }
+            }
+        }
+
+        return true
     }
 
     func createNewFile() {
@@ -137,12 +163,19 @@ final class AppState: ObservableObject {
     }
 
     private func addToRecentFiles(_ url: URL) {
-        recentFiles.removeAll { $0 == url }
+        guard recentFiles.contains(url) == false else { return }
+
         recentFiles.insert(url, at: 0)
         if recentFiles.count > 10 {
             recentFiles = Array(recentFiles.prefix(10))
         }
         saveRecentFiles()
+    }
+
+    private func canOpenMarkdownFile(_ url: URL) -> Bool {
+        guard fileManager.fileExists(atPath: url.path) else { return false }
+        let fileExtension = url.pathExtension.lowercased()
+        return fileExtension == "md" || fileExtension == "markdown"
     }
 
     func promptOpenFolder() {
