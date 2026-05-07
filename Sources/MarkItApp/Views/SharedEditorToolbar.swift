@@ -1,7 +1,11 @@
 import SwiftUI
 
 struct SharedEditorToolbar: View {
-    @ObservedObject var document: DocumentModel
+    @ObservedObject var state: AppState
+
+    private var document: DocumentModel {
+        state.document
+    }
 
     private var fileTitle: String {
         document.url?.lastPathComponent ?? "未命名"
@@ -16,14 +20,36 @@ struct SharedEditorToolbar: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Spacer().frame(width: 80)
+            Spacer().frame(width: 50)
+
+            Button {
+                state.showSidebar.toggle()
+            } label: {
+                Image(systemName: "sidebar.leading")
+            }
+            .buttonStyle(.plain)
+            .focusable(false)
+            .help("显示/隐藏目录")
+
             Text(fileTitle)
                 .font(.headline)
+
             Spacer()
+
+            Button {
+                state.showEditor.toggle()
+            } label: {
+                Image(systemName: "square.and.pencil")
+            }
+            .buttonStyle(.plain)
+            .focusable(false)
+            .help("显示/隐藏编辑器")
+
             if document.url != nil {
                 Text(statsText)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .padding(.leading, 2)
             }
         }
         .padding(.horizontal, 20)

@@ -8,7 +8,7 @@ struct ContentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            SharedEditorToolbar(document: state.document)
+            SharedEditorToolbar(state: state)
             HSplitView {
                 if state.showSidebar {
                     SidebarView(state: state)
