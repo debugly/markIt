@@ -276,6 +276,7 @@ private struct MarkdownEditorTextView: NSViewRepresentable {
 
         func textViewDidChangeSelection(_ notification: Notification) {
             guard isUpdatingSelectionProgrammatically == false,
+                  NSEvent.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.option),
                   let textView = notification.object as? NSTextView else { return }
             copySelectionToPasteboard(using: textView)
         }
