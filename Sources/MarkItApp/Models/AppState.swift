@@ -244,6 +244,10 @@ final class AppState: ObservableObject {
         do {
             try fileManager.copyItem(at: url, to: target)
             refresh()
+            selection = target
+            if requestSwitch(to: target) {
+                lastSelectedFileURL = target
+            }
         } catch {
             return
         }
