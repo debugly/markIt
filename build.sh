@@ -19,4 +19,7 @@ xcodebuild archive \
 
 # 3. 导出 .app (或者直接从 Archive 里提取)
 # 最简单的方法是直接去 Archive 路径拷贝
+echo "Copying .app from archive to /Applications..."
 rsync -a --delete ./build/Markit.xcarchive/Products/Applications/Markit.app/ /Applications/Markit.app/
+
+open /Applications/Markit.app
