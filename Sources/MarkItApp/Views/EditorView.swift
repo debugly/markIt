@@ -166,21 +166,42 @@ private final class SlashCommandMenuModel: ObservableObject {
 
 struct EditorView: View {
     @ObservedObject var document: DocumentModel
+    @StateObject private var findState = FindReplaceState()
 
     var body: some View {
-        VStack(spacing: 0) {
-            MarkdownEditorTextView(text: Binding(
-                get: { document.text },
-                set: { document.updateText($0) }
-            ))
-            .background(Color(red: 255 / 255.0, green: 252 / 255.0, blue: 234 / 255.0))
+        ZStack(alignment: .topTrailing) {
+            VStack(spacing: 0) {
+                MarkdownEditorTextView(
+                    text: Binding(
+                        get: { document.text },
+                        set: { document.updateText($0) }
+                    ),
+                    findState: findState
+                )
+                .background(Color(red: 255 / 255.0, green: 252 / 255.0, blue: 234 / 255.0))
+            }
+            
+            if findState.showPanel {
+                FindReplacePanel(state: findState)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .padding(.top, 10)
+                    .padding(.trailing, 20)
+                    .zIndex(1)
+            }
         }
         .frame(idealWidth: 500)
+        .onAppear {
+            findState.text = document.text
+        }
+        .onChange(of: document.text) { newText in
+            findState.text = newText
+        }
     }
 }
 
 private struct MarkdownEditorTextView: NSViewRepresentable {
     @Binding var text: String
+    var findState: FindReplaceState
 
     func makeCoordinator() -> Coordinator {
         Coordinator(text: $text)
@@ -233,12 +254,34 @@ private struct MarkdownEditorTextView: NSViewRepresentable {
         textView.onInlineCodeShortcut = { context.coordinator.wrapSelection(using: $0, with: "`") }
         textView.onCodeBlockShortcut = { context.coordinator.wrapSelectionLinesInCodeBlock(using: $0) }
         textView.onTableShortcut = { context.coordinator.insertTable(using: $0) }
+        
+        textView.onFindShortcut = {
+            let selection = textView.selectedRange()
+            if selection.location != NSNotFound && selection.length > 0 {
+                let selectedText = (textView.string as NSString).substring(with: selection)
+                findState.findText = selectedText
+            }
+            findState.showPanel = true
+            findState.showReplace = false
+        }
+        
+        textView.onReplaceShortcut = {
+            let selection = textView.selectedRange()
+            if selection.location != NSNotFound && selection.length > 0 {
+                let selectedText = (textView.string as NSString).substring(with: selection)
+                findState.findText = selectedText
+            }
+            findState.showPanel = true
+            findState.showReplace = true
+        }
 
         scrollView.documentView = textView
         return scrollView
     }
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        context.coordinator.findState = findState
+        
         guard let textView = scrollView.documentView as? MarkdownNSTextView else { return }
         guard textView.string != text else { return }
 
@@ -263,6 +306,13 @@ private struct MarkdownEditorTextView: NSViewRepresentable {
         var isUpdatingFromSwiftUI = false
         var isUpdatingSelectionProgrammatically = false
         weak var textView: MarkdownNSTextView?
+        weak var findState: FindReplaceState? {
+            didSet {
+                if oldValue !== findState {
+                    setupFindStateCallbacks()
+                }
+            }
+        }
 
         init(text: Binding<String>) {
             _text = text
@@ -272,6 +322,9 @@ private struct MarkdownEditorTextView: NSViewRepresentable {
             guard isUpdatingFromSwiftUI == false,
                   let textView = notification.object as? NSTextView else { return }
             text = textView.string
+            if let findState = findState {
+                findState.text = textView.string
+            }
         }
 
         func textViewDidChangeSelection(_ notification: Notification) {
@@ -279,6 +332,149 @@ private struct MarkdownEditorTextView: NSViewRepresentable {
                   NSEvent.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.option),
                   let textView = notification.object as? NSTextView else { return }
             copySelectionToPasteboard(using: textView)
+        }
+
+        private var isSettingUpCallbacks = false
+
+        func setupFindStateCallbacks() {
+            guard let findState = findState, !isSettingUpCallbacks else { return }
+            isSettingUpCallbacks = true
+            
+            findState.onUpdateHighlights = { [weak self] in
+                self?.applyHighlights()
+            }
+            findState.onScrollToMatch = { [weak self] range in
+                self?.scrollToMatch(range)
+            }
+            findState.onReplaceCurrent = { [weak self] in
+                self?.replaceCurrent()
+            }
+            findState.onReplaceAll = { [weak self] in
+                self?.replaceAll()
+            }
+            findState.onFocusEditor = { [weak self] in
+                guard let textView = self?.textView else { return }
+                textView.window?.makeFirstResponder(textView)
+            }
+            isSettingUpCallbacks = false
+            
+            if let textView = textView {
+                findState.text = textView.string
+            }
+        }
+
+        func applyHighlights() {
+            guard let textView = textView, let findState = findState else { return }
+            let layoutManager = textView.layoutManager
+            let textLength = (textView.string as NSString).length
+            
+            layoutManager?.removeTemporaryAttribute(.backgroundColor, forCharacterRange: NSRange(location: 0, length: textLength))
+            
+            guard findState.showPanel, !findState.findText.isEmpty else { return }
+            
+            let matches = findState.matches
+            let currentIndex = findState.currentMatchIndex
+            
+            for (index, range) in matches.enumerated() {
+                guard NSMaxRange(range) <= textLength else { continue }
+                
+                let highlightColor: NSColor
+                if index == currentIndex {
+                    highlightColor = NSColor.selectedTextBackgroundColor
+                } else {
+                    highlightColor = NSColor.yellow.withAlphaComponent(0.25)
+                }
+                layoutManager?.addTemporaryAttributes([.backgroundColor: highlightColor], forCharacterRange: range)
+            }
+        }
+
+        func scrollToMatch(_ range: NSRange) {
+            guard let textView = textView else { return }
+            let textLength = (textView.string as NSString).length
+            guard NSMaxRange(range) <= textLength else { return }
+            
+            isUpdatingSelectionProgrammatically = true
+            textView.setSelectedRange(range)
+            isUpdatingSelectionProgrammatically = false
+            textView.scrollRangeToVisible(range)
+            applyHighlights()
+        }
+
+        private func preserveCase(for match: String, replacement: String) -> String {
+            guard !match.isEmpty && !replacement.isEmpty else { return replacement }
+            
+            let isAllUpper = match.allSatisfy { !$0.isLetter || $0.isUppercase }
+            if isAllUpper {
+                return replacement.uppercased()
+            }
+            
+            let firstChar = match.prefix(1)
+            let isCapitalized = firstChar.allSatisfy { $0.isUppercase } && match.dropFirst().allSatisfy { !$0.isLetter || $0.isLowercase }
+            if isCapitalized {
+                let firstReplacementChar = replacement.prefix(1).uppercased()
+                let restReplacement = replacement.dropFirst().lowercased()
+                return firstReplacementChar + restReplacement
+            }
+            
+            return replacement
+        }
+
+        func replaceCurrent() {
+            guard let textView = textView, let findState = findState else { return }
+            let matches = findState.matches
+            guard !matches.isEmpty else { return }
+            
+            let index = findState.currentMatchIndex
+            guard index < matches.count else { return }
+            let range = matches[index]
+            
+            let matchedText = (textView.string as NSString).substring(with: range)
+            let replacement = findState.preserveCase ? preserveCase(for: matchedText, replacement: findState.replaceText) : findState.replaceText
+            
+            if textView.shouldChangeText(in: range, replacementString: replacement) {
+                textView.textStorage?.replaceCharacters(in: range, with: replacement)
+                textView.didChangeText()
+                
+                text = textView.string
+                findState.text = textView.string
+                
+                if !findState.matches.isEmpty {
+                    let nextIndex = min(index, findState.matches.count - 1)
+                    findState.currentMatchIndex = nextIndex
+                    scrollToMatch(findState.matches[nextIndex])
+                } else {
+                    findState.currentMatchIndex = 0
+                    applyHighlights()
+                }
+            }
+        }
+
+        func replaceAll() {
+            guard let textView = textView, let findState = findState else { return }
+            let matches = findState.matches
+            guard !matches.isEmpty else { return }
+            
+            textView.undoManager?.beginUndoGrouping()
+            
+            let nsText = textView.string as NSString
+            let sortedMatches = matches.sorted(by: { $0.location > $1.location })
+            
+            for range in sortedMatches {
+                let matchedText = nsText.substring(with: range)
+                let replacement = findState.preserveCase ? preserveCase(for: matchedText, replacement: findState.replaceText) : findState.replaceText
+                
+                if textView.shouldChangeText(in: range, replacementString: replacement) {
+                    textView.textStorage?.replaceCharacters(in: range, with: replacement)
+                }
+            }
+            
+            textView.didChangeText()
+            textView.undoManager?.endUndoGrouping()
+            
+            text = textView.string
+            findState.text = textView.string
+            findState.currentMatchIndex = 0
+            applyHighlights()
         }
 
         func wrapSelection(using textView: NSTextView, with marker: String) {
@@ -499,6 +695,8 @@ private final class MarkdownNSTextView: NSTextView {
     var onInlineCodeShortcut: ((NSTextView) -> Void)?
     var onCodeBlockShortcut: ((NSTextView) -> Void)?
     var onTableShortcut: ((NSTextView) -> Void)?
+    var onFindShortcut: (() -> Void)?
+    var onReplaceShortcut: (() -> Void)?
     weak var actionCoordinator: MarkdownEditorTextView.Coordinator?
 
     private var commandTriggerRange = NSRange(location: NSNotFound, length: 0)
@@ -509,6 +707,14 @@ private final class MarkdownNSTextView: NSTextView {
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if handleEscapeIfNeeded(for: event) {
+            return true
+        }
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if modifiers == [.command] && event.charactersIgnoringModifiers?.lowercased() == "f" {
+            onFindShortcut?()
+            return true
+        } else if modifiers == [.command, .option] && event.charactersIgnoringModifiers?.lowercased() == "f" {
+            onReplaceShortcut?()
             return true
         }
         return super.performKeyEquivalent(with: event)
@@ -558,9 +764,15 @@ private final class MarkdownNSTextView: NSTextView {
             case "t":
                 onTableShortcut?(self)
                 return
+            case "f":
+                onFindShortcut?()
+                return
             default:
                 break
             }
+        } else if modifiers == [.command, .option] && event.charactersIgnoringModifiers?.lowercased() == "f" {
+            onReplaceShortcut?()
+            return
         } else if modifiers == [.command, .shift],
                   event.charactersIgnoringModifiers?.lowercased() == "c" {
             onCodeBlockShortcut?(self)
@@ -707,8 +919,434 @@ private final class MarkdownNSTextView: NSTextView {
 
     @discardableResult
     private func closeFloatingUIIfNeeded() -> Bool {
-        guard slashCommandHostView != nil else { return false }
-        closeSlashCommandMenu()
-        return true
+        if slashCommandHostView != nil {
+            closeSlashCommandMenu()
+            return true
+        }
+        if let findState = actionCoordinator?.findState, findState.showPanel {
+            findState.showPanel = false
+            return true
+        }
+        return false
+    }
+}
+
+final class FindReplaceState: ObservableObject {
+    @Published var showPanel = false
+    @Published var showReplace = false
+    @Published var findText = "" {
+        didSet {
+            updateMatches()
+        }
+    }
+    @Published var replaceText = ""
+    @Published var matchCase = false {
+        didSet {
+            updateMatches()
+        }
+    }
+    @Published var wholeWord = false {
+        didSet {
+            updateMatches()
+        }
+    }
+    @Published var regex = false {
+        didSet {
+            updateMatches()
+        }
+    }
+    @Published var preserveCase = false
+    
+    @Published var matches: [NSRange] = []
+    @Published var currentMatchIndex: Int = 0
+    
+    var text: String = "" {
+        didSet {
+            if oldValue != text {
+                updateMatches()
+            }
+        }
+    }
+    
+    var onUpdateHighlights: (() -> Void)?
+    var onScrollToMatch: ((NSRange) -> Void)?
+    var onReplaceCurrent: (() -> Void)?
+    var onReplaceAll: (() -> Void)?
+    var onFocusEditor: (() -> Void)?
+    
+    func updateMatches() {
+        matches = findMatches(in: text, findText: findText, matchCase: matchCase, wholeWord: wholeWord, regex: regex)
+        if matches.isEmpty {
+            currentMatchIndex = 0
+        } else {
+            if currentMatchIndex >= matches.count {
+                currentMatchIndex = 0
+            }
+        }
+        onUpdateHighlights?()
+    }
+    
+    func nextMatch() {
+        guard !matches.isEmpty else { return }
+        currentMatchIndex = (currentMatchIndex + 1) % matches.count
+        onScrollToMatch?(matches[currentMatchIndex])
+    }
+    
+    func previousMatch() {
+        guard !matches.isEmpty else { return }
+        currentMatchIndex = (currentMatchIndex - 1 + matches.count) % matches.count
+        onScrollToMatch?(matches[currentMatchIndex])
+    }
+    
+    func replace() {
+        onReplaceCurrent?()
+    }
+    
+    func replaceAll() {
+        onReplaceAll?()
+    }
+    
+    private func findMatches(in text: String, findText: String, matchCase: Bool, wholeWord: Bool, regex: Bool) -> [NSRange] {
+        guard !findText.isEmpty else { return [] }
+        
+        var ranges: [NSRange] = []
+        let nsText = text as NSString
+        
+        if regex {
+            var options: NSRegularExpression.Options = []
+            if !matchCase {
+                options.insert(.caseInsensitive)
+            }
+            guard let regexObj = try? NSRegularExpression(pattern: findText, options: options) else {
+                return []
+            }
+            let matches = regexObj.matches(in: text, options: [], range: NSRange(location: 0, length: nsText.length))
+            for m in matches {
+                ranges.append(m.range)
+            }
+        } else {
+            var options: NSString.CompareOptions = []
+            if !matchCase {
+                options.insert(.caseInsensitive)
+            }
+            
+            var searchRange = NSRange(location: 0, length: nsText.length)
+            while searchRange.location < nsText.length {
+                let foundRange = nsText.range(of: findText, options: options, range: searchRange)
+                if foundRange.location == NSNotFound {
+                    break
+                }
+                
+                var isMatch = true
+                if wholeWord {
+                    let wordSet = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "_"))
+                    
+                    if foundRange.location > 0 {
+                        let prevChar = nsText.character(at: foundRange.location - 1)
+                        if let prevScalar = UnicodeScalar(prevChar), wordSet.contains(prevScalar) {
+                            isMatch = false
+                        }
+                    }
+                    let nextLoc = foundRange.location + foundRange.length
+                    if nextLoc < nsText.length {
+                        let nextChar = nsText.character(at: nextLoc)
+                        if let nextScalar = UnicodeScalar(nextChar), wordSet.contains(nextScalar) {
+                            isMatch = false
+                        }
+                    }
+                }
+                
+                if isMatch {
+                    ranges.append(foundRange)
+                }
+                
+                searchRange.location = foundRange.location + max(1, foundRange.length)
+                searchRange.length = nsText.length - searchRange.location
+            }
+        }
+        
+        return ranges
+    }
+}
+
+private enum FindReplaceFocusField: Hashable {
+    case find
+    case replace
+}
+
+struct FindReplacePanel: View {
+    @ObservedObject var state: FindReplaceState
+    @FocusState private var focusField: FindReplaceFocusField?
+    @State private var escapeMonitor: Any? = nil
+    
+    var body: some View {
+        VStack(spacing: 8) {
+            // Row 1: Find Row
+            HStack(spacing: 6) {
+                // Toggle Replace arrow
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        state.showReplace.toggle()
+                    }
+                } label: {
+                    Image(systemName: state.showReplace ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(.secondary)
+                        .frame(width: 16, height: 16)
+                }
+                .buttonStyle(.plain)
+                .help(state.showReplace ? "隐藏替换" : "显示替换")
+                
+                // Find input + match options inside
+                HStack(spacing: 4) {
+                    TextField("查找", text: $state.findText)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 13))
+                        .focused($focusField, equals: .find)
+                        .onSubmit {
+                            state.nextMatch()
+                        }
+                    
+                    // Inside-input buttons
+                    HStack(spacing: 2) {
+                        // Match Case: "Aa"
+                        Button {
+                            state.matchCase.toggle()
+                        } label: {
+                            Text("Aa")
+                                .font(.system(size: 11, weight: .bold))
+                                .frame(width: 18, height: 18)
+                                .background(state.matchCase ? Color.accentColor.opacity(0.2) : Color.clear)
+                                .foregroundColor(state.matchCase ? .accentColor : .secondary)
+                                .cornerRadius(3)
+                        }
+                        .buttonStyle(.plain)
+                        .help("区分大小写")
+                        
+                        // Whole Word: "ab"
+                        Button {
+                            state.wholeWord.toggle()
+                        } label: {
+                            Text("ab")
+                                .font(.system(size: 11, weight: .bold))
+                                .frame(width: 18, height: 18)
+                                .background(state.wholeWord ? Color.accentColor.opacity(0.2) : Color.clear)
+                                .foregroundColor(state.wholeWord ? .accentColor : .secondary)
+                                .cornerRadius(3)
+                        }
+                        .buttonStyle(.plain)
+                        .help("全字匹配")
+                        
+                        // Regex: ".*"
+                        Button {
+                            state.regex.toggle()
+                        } label: {
+                            Text(".*")
+                                .font(.system(size: 11, weight: .bold))
+                                .frame(width: 18, height: 18)
+                                .background(state.regex ? Color.accentColor.opacity(0.2) : Color.clear)
+                                .foregroundColor(state.regex ? .accentColor : .secondary)
+                                .cornerRadius(3)
+                        }
+                        .buttonStyle(.plain)
+                        .help("使用正则表达式")
+                    }
+                    .padding(.trailing, 2)
+                }
+                .padding(.horizontal, 6)
+                .padding(.vertical, 4)
+                .background(Color(nsColor: .controlBackgroundColor))
+                .cornerRadius(4)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
+                )
+                .frame(width: 200)
+                
+                // Match Count / Info
+                Text(matchCountText)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(.secondary)
+                    .frame(width: 65, alignment: .leading)
+                    .lineLimit(1)
+                
+                // Navigation / Action buttons
+                HStack(spacing: 2) {
+                    // Previous match
+                    Button {
+                        state.previousMatch()
+                    } label: {
+                        Image(systemName: "chevron.up")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(.secondary)
+                            .frame(width: 20, height: 20)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("上一个匹配项 (Shift+Enter)")
+                    
+                    // Next match
+                    Button {
+                        state.nextMatch()
+                    } label: {
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(.secondary)
+                            .frame(width: 20, height: 20)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("下一个匹配项 (Enter)")
+                    
+                    // Close button
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.1)) {
+                            state.showPanel = false
+                            state.onFocusEditor?()
+                        }
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(.secondary)
+                            .frame(width: 20, height: 20)
+                    }
+                    .buttonStyle(.plain)
+                    .help("关闭 (Esc)")
+                }
+            }
+            
+            // Row 2: Replace Row
+            if state.showReplace {
+                HStack(spacing: 6) {
+                    // Alignment spacer matching the arrow's width (16pt)
+                    Spacer()
+                        .frame(width: 16)
+                    
+                    // Replace input + preserve case inside
+                    HStack(spacing: 4) {
+                        TextField("替换", text: $state.replaceText)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 13))
+                            .focused($focusField, equals: .replace)
+                            .onSubmit {
+                                state.replace()
+                            }
+                        
+                        // AB (Preserve Case) button
+                        Button {
+                            state.preserveCase.toggle()
+                        } label: {
+                            Text("AB")
+                                .font(.system(size: 9, weight: .bold))
+                                .frame(width: 18, height: 18)
+                                .background(state.preserveCase ? Color.accentColor.opacity(0.2) : Color.clear)
+                                .foregroundColor(state.preserveCase ? .accentColor : .secondary)
+                                .cornerRadius(3)
+                        }
+                        .buttonStyle(.plain)
+                        .help("保留大小写")
+                        .padding(.trailing, 2)
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 4)
+                    .background(Color(nsColor: .controlBackgroundColor))
+                    .cornerRadius(4)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4)
+                            .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
+                    )
+                    .frame(width: 200)
+                    
+                    // Spacer matching matchCountText width (65pt)
+                    Spacer()
+                        .frame(width: 65)
+                    
+                    // Replace actions
+                    HStack(spacing: 2) {
+                        // Replace current
+                        Button {
+                            state.replace()
+                        } label: {
+                            Image(systemName: "arrow.right")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(.secondary)
+                                .frame(width: 20, height: 20)
+                        }
+                        .buttonStyle(.plain)
+                        .help("替换")
+                        
+                        // Replace All
+                        Button {
+                            state.replaceAll()
+                        } label: {
+                            Image(systemName: "arrow.right.to.line")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(.secondary)
+                                .frame(width: 20, height: 20)
+                        }
+                        .buttonStyle(.plain)
+                        .help("全部替换")
+                        
+                        // Placeholder matching the close button from find row (20pt)
+                        Spacer()
+                            .frame(width: 20)
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(.regularMaterial)
+        .cornerRadius(6)
+        .shadow(color: Color.black.opacity(0.18), radius: 8, x: 0, y: 3)
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(Color.primary.opacity(0.1), lineWidth: 1)
+        )
+        .onAppear {
+            if focusField == nil {
+                focusField = .find
+            }
+            escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+                if event.keyCode == 53 { // Escape
+                    if state.showPanel {
+                        state.showPanel = false
+                        state.onFocusEditor?()
+                        return nil
+                    }
+                }
+                return event
+            }
+        }
+        .onDisappear {
+            if let monitor = escapeMonitor {
+                NSEvent.removeMonitor(monitor)
+                escapeMonitor = nil
+            }
+        }
+        .onChange(of: state.showPanel) { show in
+            if show {
+                focusField = .find
+            }
+        }
+        .onChange(of: state.showReplace) { show in
+            if show {
+                focusField = .replace
+            } else {
+                focusField = .find
+            }
+        }
+    }
+    
+    private var matchCountText: String {
+        guard !state.findText.isEmpty else {
+            return "无结果"
+        }
+        let count = state.matches.count
+        if count == 0 {
+            return "无结果"
+        } else {
+            return "\(state.currentMatchIndex + 1) / \(count)"
+        }
     }
 }
