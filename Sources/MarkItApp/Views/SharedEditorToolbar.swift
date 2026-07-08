@@ -18,8 +18,8 @@ struct SharedEditorToolbar: View {
     private var statsText: String {
         let text = document.text
         let lines = max(text.split(whereSeparator: \.isNewline).count, text.isEmpty ? 0 : 1)
-        let words = text.split(whereSeparator: { $0.isWhitespace || $0.isNewline }).count
-        return "\(lines) 行 · \(words) 词"
+        let characters = document.plainText.characterCount
+        return "\(lines) 行 · \(characters) 字"
     }
 
     var body: some View {
@@ -134,5 +134,11 @@ private final class RightClickPathControl: NSPathControl {
 
     override func rightMouseDown(with event: NSEvent) {
         performClick(nil)
+    }
+}
+
+extension String {
+    var characterCount: Int {
+        return self.filter { !$0.isWhitespace && !$0.isNewline }.count
     }
 }

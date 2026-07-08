@@ -19,6 +19,12 @@ final class DocumentModel: ObservableObject {
         didSet { renderHTML() }
     }
 
+    var plainText: String {
+        guard !text.isEmpty else { return "" }
+        let rawHtml = parser.html(from: text)
+        return rawHtml.replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
+    }
+
     private var saveTask: Task<Void, Never>?
     private var isSettingInitialText = false
     private let parser = MarkdownParser()
