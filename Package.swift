@@ -8,7 +8,7 @@ let package = Package(
         .executable(name: "Markit", targets: ["MarkItApp"])
     ],
     dependencies: [
-        .package(url: "https://github.com/JohnSundell/Ink.git", from: "0.6.0")
+        .package(path: "../Ink")
     ],
     targets: [
         .executableTarget(
