@@ -14,6 +14,7 @@ struct ContentView: View {
                     SidebarView(state: state)
                 }
                 EditorPreviewContainer(state: state)
+                    .layoutPriority(1)
             }
         }
         .ignoresSafeArea(.container, edges: .top) // 强制忽略顶部安全区域

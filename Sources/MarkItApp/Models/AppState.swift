@@ -9,10 +9,30 @@ final class AppState: ObservableObject {
     @Published var tree: [FileNode] = []
     @Published var selection: URL? = nil
 
-    @Published var showSidebar = true
-    @Published var showEditor = true
-    @Published var showPreview = true
+    @Published var showSidebar = true {
+        didSet { startTransitionLock() }
+    }
+    @Published var showEditor = true {
+        didSet { startTransitionLock() }
+    }
+    @Published var showPreview = true {
+        didSet { startTransitionLock() }
+    }
     @Published var showUnsavedAlert = false
+    @Published var editorWidth: CGFloat = 500
+    @Published var isTransitioning = false
+
+    private var transitionWorkItem: DispatchWorkItem?
+
+    func startTransitionLock() {
+        isTransitioning = true
+        transitionWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.isTransitioning = false
+        }
+        transitionWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8, execute: work)
+    }
     @Published var previewStyle: String = "GitHub.css" {
         didSet { document.previewStyle = previewStyle }
     }
