@@ -425,7 +425,7 @@ private struct MarkdownEditorTextView: NSViewRepresentable {
             guard !matches.isEmpty else { return }
             
             let index = findState.currentMatchIndex
-            guard index < matches.count else { return }
+            guard index >= 0 && index < matches.count else { return }
             let range = matches[index]
             
             let matchedText = (textView.string as NSString).substring(with: range)
@@ -435,15 +435,30 @@ private struct MarkdownEditorTextView: NSViewRepresentable {
                 textView.textStorage?.replaceCharacters(in: range, with: replacement)
                 textView.didChangeText()
                 
+                let replacementLength = (replacement as NSString).length
+                let endOfReplacement = range.location + replacementLength
+                
                 text = textView.string
                 findState.text = textView.string
                 
                 if !findState.matches.isEmpty {
-                    let nextIndex = min(index, findState.matches.count - 1)
-                    findState.currentMatchIndex = nextIndex
-                    scrollToMatch(findState.matches[nextIndex])
+                    if let nextMatchIndex = findState.matches.firstIndex(where: { $0.location >= endOfReplacement }) {
+                        findState.currentMatchIndex = nextMatchIndex
+                        scrollToMatch(findState.matches[nextMatchIndex])
+                    } else {
+                        if let firstSafeMatchIndex = findState.matches.firstIndex(where: { m in
+                            let overlaps = (m.location < endOfReplacement) && (NSMaxRange(m) > range.location)
+                            return !overlaps
+                        }) {
+                            findState.currentMatchIndex = firstSafeMatchIndex
+                            scrollToMatch(findState.matches[firstSafeMatchIndex])
+                        } else {
+                            findState.currentMatchIndex = -1
+                            applyHighlights()
+                        }
+                    }
                 } else {
-                    findState.currentMatchIndex = 0
+                    findState.currentMatchIndex = -1
                     applyHighlights()
                 }
             }
@@ -988,13 +1003,21 @@ final class FindReplaceState: ObservableObject {
     
     func nextMatch() {
         guard !matches.isEmpty else { return }
-        currentMatchIndex = (currentMatchIndex + 1) % matches.count
+        if currentMatchIndex < 0 {
+            currentMatchIndex = 0
+        } else {
+            currentMatchIndex = (currentMatchIndex + 1) % matches.count
+        }
         onScrollToMatch?(matches[currentMatchIndex])
     }
     
     func previousMatch() {
         guard !matches.isEmpty else { return }
-        currentMatchIndex = (currentMatchIndex - 1 + matches.count) % matches.count
+        if currentMatchIndex < 0 {
+            currentMatchIndex = matches.count - 1
+        } else {
+            currentMatchIndex = (currentMatchIndex - 1 + matches.count) % matches.count
+        }
         onScrollToMatch?(matches[currentMatchIndex])
     }
     
