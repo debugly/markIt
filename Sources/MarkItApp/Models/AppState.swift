@@ -12,14 +12,14 @@ final class AppState: ObservableObject {
     @Published var showSidebar = true {
         didSet { startTransitionLock() }
     }
-    @Published var showEditor = true {
+    @Published var showEditor = false {
         didSet { startTransitionLock() }
     }
     @Published var showPreview = true {
         didSet { startTransitionLock() }
     }
     @Published var showUnsavedAlert = false
-    @Published var editorWidth: CGFloat = 500
+    @Published var editorWidth: CGFloat = 200
     @Published var isTransitioning = false
 
     private var transitionWorkItem: DispatchWorkItem?
