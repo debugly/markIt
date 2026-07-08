@@ -92,7 +92,7 @@ struct SidebarView: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
         }
-        .frame(minWidth: 280, idealWidth: 280, maxWidth: 320)
+        .frame(minWidth: 280, idealWidth: 280, maxWidth: 480)
         .fileImporter(
             isPresented: $isPickingFolder,
             allowedContentTypes: [UTType.folder],
@@ -198,12 +198,20 @@ private struct RecentFileRowView: View {
     @ObservedObject var state: AppState
     let url: URL
 
+    private var displayName: String {
+        let parentName = url.deletingLastPathComponent().lastPathComponent
+        if !parentName.isEmpty && parentName != "/" {
+            return "\(parentName)/\(url.lastPathComponent)"
+        }
+        return url.lastPathComponent
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             Color.clear
                 .frame(width: 18, height: 26)
 
-            Label(url.lastPathComponent, systemImage: "doc.text")
+            Label(displayName, systemImage: "doc.text")
                 .font(.system(size: 14))
                 .lineLimit(1)
                 .truncationMode(.tail)
