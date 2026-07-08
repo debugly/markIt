@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import UniformTypeIdentifiers
+import Combine
 
 final class AppState: ObservableObject {
     @Published var rootFolders: [URL] = [] {
@@ -48,11 +49,17 @@ final class AppState: ObservableObject {
     private var isAdjustingSelection = false
     private var pendingSwitchURL: URL? = nil
 
+    private var cancellables = Set<AnyCancellable>()
+    var hasOpenedFileOnLaunch = false
+    private let lastOpenedFileBookmarkKey = "MarkIt.LastOpenedFileBookmark"
+    private let lastOpenedFileURLKey = "MarkIt.LastOpenedFileURL"
+
     init() {
         restoreBookmarks()
         restorePreviewStyle()
         restoreRecentFiles()
         rebuildTree()
+        setupDocumentObserver()
     }
 
     private func restoreRecentFiles() {
@@ -576,5 +583,114 @@ final class AppState: ObservableObject {
         }
 
         return nil
+    }
+
+    private func setupDocumentObserver() {
+        document.$url
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] url in
+                guard let self = self else { return }
+                print("[MarkIt Log] setupDocumentObserver: document.url changed to \(url?.path ?? "nil")")
+                if let url = url {
+                    self.saveLastOpenedFile(url)
+                } else {
+                    self.clearLastOpenedFile()
+                }
+            }
+            .store(in: &cancellables)
+    }
+
+    private func saveLastOpenedFile(_ url: URL) {
+        if selection != url {
+            selection = url
+        }
+        
+        print("[MarkIt Log] saveLastOpenedFile called for URL: \(url.path)")
+        do {
+            let bookmarkData = try url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
+            UserDefaults.standard.set(bookmarkData, forKey: lastOpenedFileBookmarkKey)
+            print("[MarkIt Log] saveLastOpenedFile: Saved security-scoped bookmark data successfully.")
+        } catch {
+            print("[MarkIt Log] saveLastOpenedFile: Failed to create security-scoped bookmark. Error: \(error). Trying raw URL...")
+            if let urlData = try? JSONEncoder().encode(url) {
+                UserDefaults.standard.set(urlData, forKey: lastOpenedFileURLKey)
+                print("[MarkIt Log] saveLastOpenedFile: Saved raw URL data successfully.")
+            } else {
+                print("[MarkIt Log] saveLastOpenedFile: Failed to encode raw URL.")
+            }
+        }
+    }
+
+    private func clearLastOpenedFile() {
+        print("[MarkIt Log] clearLastOpenedFile called.")
+        UserDefaults.standard.removeObject(forKey: lastOpenedFileBookmarkKey)
+        UserDefaults.standard.removeObject(forKey: lastOpenedFileURLKey)
+    }
+
+    func restoreLastOpenedFile() {
+        print("[MarkIt Log] restoreLastOpenedFile called. hasOpenedFileOnLaunch: \(hasOpenedFileOnLaunch), document.url: \(document.url?.path ?? "nil")")
+        guard !hasOpenedFileOnLaunch else { 
+            print("[MarkIt Log] restoreLastOpenedFile: Skipped because a file is already being opened on launch.")
+            return 
+        }
+        guard document.url == nil else { 
+            print("[MarkIt Log] restoreLastOpenedFile: Skipped because document.url is already non-nil.")
+            return 
+        }
+
+        if let bookmarkData = UserDefaults.standard.data(forKey: lastOpenedFileBookmarkKey) {
+            print("[MarkIt Log] restoreLastOpenedFile: Found bookmarkData.")
+            var isStale = false
+            if let url = try? URL(
+                resolvingBookmarkData: bookmarkData,
+                options: .withSecurityScope,
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale
+            ) {
+                print("[MarkIt Log] restoreLastOpenedFile: Resolved security-scoped URL: \(url.path), isStale: \(isStale)")
+                _ = url.startAccessingSecurityScopedResource()
+                if canOpenMarkdownFile(url) {
+                    print("[MarkIt Log] restoreLastOpenedFile: Opening resolved security-scoped URL.")
+                    openFile(url)
+                    return
+                } else {
+                    print("[MarkIt Log] restoreLastOpenedFile: resolved security-scoped URL exists but cannot open it (file missing or incorrect extension).")
+                }
+            } else {
+                print("[MarkIt Log] restoreLastOpenedFile: Failed to resolve security-scoped bookmark.")
+            }
+            
+            if let url = try? URL(
+                resolvingBookmarkData: bookmarkData,
+                options: [],
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale
+            ) {
+                print("[MarkIt Log] restoreLastOpenedFile: Resolved standard URL: \(url.path)")
+                if canOpenMarkdownFile(url) {
+                    print("[MarkIt Log] restoreLastOpenedFile: Opening resolved standard URL.")
+                    openFile(url)
+                    return
+                }
+            } else {
+                print("[MarkIt Log] restoreLastOpenedFile: Failed to resolve standard bookmark.")
+            }
+        } else {
+            print("[MarkIt Log] restoreLastOpenedFile: No bookmarkData found in UserDefaults.")
+        }
+
+        if let urlData = UserDefaults.standard.data(forKey: lastOpenedFileURLKey),
+           let url = try? JSONDecoder().decode(URL.self, from: urlData) {
+            print("[MarkIt Log] restoreLastOpenedFile: Found raw URL: \(url.path)")
+            if canOpenMarkdownFile(url) {
+                print("[MarkIt Log] restoreLastOpenedFile: Opening raw URL.")
+                openFile(url)
+            } else {
+                print("[MarkIt Log] restoreLastOpenedFile: Raw URL exists but cannot open it.")
+            }
+        } else {
+            print("[MarkIt Log] restoreLastOpenedFile: No raw URL data found in UserDefaults.")
+        }
     }
 }

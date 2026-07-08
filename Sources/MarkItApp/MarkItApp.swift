@@ -21,23 +21,35 @@ struct MarkItApp: App {
     @StateObject private var state = AppState()
 
     init() {
+        print("[MarkIt Log] MarkItApp init started.")
         let state = AppState()
         _state = StateObject(wrappedValue: state)
         appDelegate.appState = state
         appDelegate.onOpenFile = { [weak state] url in
             guard let state else { return }
+            print("[MarkIt Log] appDelegate.onOpenFile triggered for URL: \(url.path)")
+            state.hasOpenedFileOnLaunch = true
             DispatchQueue.main.async {
                 if state.document.url == url {
+                    print("[MarkIt Log] appDelegate.onOpenFile: URL is already open.")
                     NSApp.windows.first?.makeKeyAndOrderFront(nil)
                 } else {
+                    print("[MarkIt Log] appDelegate.onOpenFile: opening URL: \(url.path)")
                     state.openFile(url)
                 }
             }
         }
 
         if let url = Self.getInitialFileURL() {
+            print("[MarkIt Log] Found initial file URL on launch: \(url.path)")
+            state.hasOpenedFileOnLaunch = true
             DispatchQueue.main.async {
                 state.openFile(url)
+            }
+        } else {
+            print("[MarkIt Log] No initial file URL on launch. Scheduling restoreLastOpenedFile().")
+            DispatchQueue.main.async {
+                state.restoreLastOpenedFile()
             }
         }
     }
