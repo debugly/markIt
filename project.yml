@@ -24,7 +24,7 @@ targets:
       base:
         PRODUCT_NAME: Markit
         PRODUCT_BUNDLE_IDENTIFIER: com.debugly.markit
-        MARKETING_VERSION: "0.1.0"
+        MARKETING_VERSION: "0.2.0"
         CURRENT_PROJECT_VERSION: "0708"
         INFOPLIST_FILE: Resources/Info.plist
         SWIFT_VERSION: "5.9"
