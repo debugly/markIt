@@ -71,16 +71,17 @@ struct WebView: NSViewRepresentable {
             if message.name == "editorReady" {
                 isEditorReady = true
                 
+                let document = parent.document
                 // Initial load of content and style
-                let markdown = parent.document.bodyText
-                let style = parent.document.previewStyle
-                let css = parent.document.loadCSS(for: style)
-                let jekyllTitle = parent.document.jekyllTitle
-                let jekyllDate = parent.document.jekyllDate
-                let jekyllTags = parent.document.jekyllTags
-                let hasJekyll = !parent.document.frontMatterText.isEmpty
+                let markdown = document.bodyText
+                let style = document.previewStyle
+                let css = document.loadCSS(for: style)
+                let jekyllTitle = document.jekyllTitle
+                let jekyllDate = document.jekyllDate
+                let jekyllTags = document.jekyllTags
+                let hasJekyll = !document.frontMatterText.isEmpty
                 
-                loadedURL = parent.document.url
+                loadedURL = document.url
                 loadedStyle = style
                 lastReceivedText = markdown
                 
@@ -177,12 +178,41 @@ private func getEditorHTMLTemplate() -> String {
             });
         </script>
         <style>
+            :root {
+                --text-color: #1e293b;
+                --heading-color: #0f172a;
+                --border-color: #e2e8f0;
+                --table-th-bg: #f6f8fa;
+                --card-bg: linear-gradient(135deg, #fdfbfb 0%, #f6f7f9 100%);
+                --input-bg: #ffffff;
+                --input-border: #cbd5e1;
+                --input-text: #1e293b;
+                --badge-bg: #fff1f2;
+                --badge-text: #e11d48;
+                --label-color: #64748b;
+            }
+            @media (prefers-color-scheme: dark) {
+                :root {
+                    --text-color: #e2e8f0;
+                    --heading-color: #f1f5f9;
+                    --border-color: #334155;
+                    --table-th-bg: #1e293b;
+                    --card-bg: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+                    --input-bg: #1e293b;
+                    --input-border: #475569;
+                    --input-text: #f1f5f9;
+                    --badge-bg: #4c0519;
+                    --badge-text: #fda4af;
+                    --label-color: #94a3b8;
+                }
+            }
             html, body {
                 margin: 0;
                 padding: 0;
                 width: 100%;
                 min-height: 100%;
                 background-color: transparent;
+                color: var(--text-color);
             }
             #editor-container {
                 width: 100%;
@@ -219,7 +249,7 @@ private func getEditorHTMLTemplate() -> String {
                 overflow: hidden;
             }
             .tiptap td, .tiptap th {
-                border: 1px solid #ddd;
+                border: 1px solid var(--border-color);
                 box-sizing: border-box;
                 min-width: 1em;
                 padding: 8px 12px;
@@ -227,7 +257,7 @@ private func getEditorHTMLTemplate() -> String {
                 vertical-align: top;
             }
             .tiptap th {
-                background-color: #f6f8fa;
+                background-color: var(--table-th-bg);
                 font-weight: bold;
                 text-align: left;
             }
@@ -251,8 +281,8 @@ private func getEditorHTMLTemplate() -> String {
             }
             
             #jekyll-header-card {
-                background: linear-gradient(135deg, #fdfbfb 0%, #f6f7f9 100%);
-                border: 1px solid #e2e8f0;
+                background: var(--card-bg);
+                border: 1px solid var(--border-color);
                 border-radius: 12px;
                 padding: 16px 20px;
                 margin-bottom: 24px;
@@ -262,8 +292,8 @@ private func getEditorHTMLTemplate() -> String {
             .jekyll-badge {
                 display: inline-flex;
                 align-items: center;
-                background-color: #fff1f2;
-                color: #e11d48;
+                background-color: var(--badge-bg);
+                color: var(--badge-text);
                 font-size: 11px;
                 font-weight: 600;
                 text-transform: uppercase;
@@ -291,18 +321,18 @@ private func getEditorHTMLTemplate() -> String {
             .jekyll-field label {
                 font-size: 12px;
                 font-weight: 500;
-                color: #64748b;
+                color: var(--label-color);
             }
             .jekyll-input-field {
                 font-size: 14px;
                 font-weight: 500;
-                color: #1e293b;
-                border: 1px solid #cbd5e1;
+                color: var(--input-text);
+                border: 1px solid var(--input-border);
                 border-radius: 8px;
                 padding: 8px 12px;
                 outline: none;
                 transition: border-color 0.2s, box-shadow 0.2s;
-                background-color: #ffffff;
+                background-color: var(--input-bg);
             }
             .jekyll-input-field:focus {
                 border-color: #e11d48;
@@ -353,11 +383,11 @@ private func getEditorHTMLTemplate() -> String {
                     const level = node.attrs.level;
                     let style = '';
                     if (level === 1) {
-                        style = 'font-size: 28px; color: black; margin-top: 1.5em; margin-bottom: 1em;';
+                        style = 'font-size: 28px; color: var(--heading-color); margin-top: 1.5em; margin-bottom: 1em;';
                     } else if (level === 2) {
-                        style = 'font-size: 24px; border-bottom: 1px solid #cccccc; padding-bottom: 0.3em; color: black; margin-top: 1.5em; margin-bottom: 1em;';
+                        style = 'font-size: 24px; border-bottom: 1px solid var(--border-color); padding-bottom: 0.3em; color: var(--heading-color); margin-top: 1.5em; margin-bottom: 1em;';
                     } else if (level === 3) {
-                        style = 'font-size: 18px; margin-top: 1em; margin-bottom: 0.5em;';
+                        style = 'font-size: 18px; color: var(--heading-color); margin-top: 1em; margin-bottom: 0.5em;';
                     }
                     
                     return [
@@ -546,9 +576,10 @@ struct SourceEditorView: View {
             get: { document.text },
             set: { document.updateText($0) }
         ))
-        .font(.system(size: 14, weight: .regular, design: .monospaced))
-        .lineSpacing(4)
-        .padding(20)
+        .font(.system(size: 14.5, weight: .regular, design: .monospaced))
+        .lineSpacing(6)
+        .padding(.horizontal, 36)
+        .padding(.vertical, 24)
         .background(Color(nsColor: .textBackgroundColor))
     }
 }
@@ -560,7 +591,7 @@ struct PreviewView: View {
         VStack(spacing: 0) {
             if state.editMode == .wysiwyg {
                 WebView(document: state.document)
-                    .background(.white)
+                    .background(Color(nsColor: .textBackgroundColor))
             } else {
                 SourceEditorView(document: state.document)
             }
