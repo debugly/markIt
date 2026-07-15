@@ -574,7 +574,7 @@ private func getEditorHTMLTemplate() -> String {
 
             function getCaretCoordinates() {
                 const sel = window.getSelection();
-                if (!sel.rangeCount) return { top: 0, left: 0 };
+                if (!sel.rangeCount) return { top: 0, left: 0, height: 20 };
                 const range = sel.getRangeAt(0).cloneRange();
                 let rect = range.getBoundingClientRect();
                 if (rect.width === 0 && rect.height === 0) {
@@ -587,8 +587,9 @@ private func getEditorHTMLTemplate() -> String {
                     parent.normalize();
                 }
                 return {
-                    top: rect.bottom + window.scrollY + 6,
-                    left: rect.left + window.scrollX
+                    top: rect.bottom + window.scrollY,
+                    left: rect.left + window.scrollX,
+                    height: rect.height || 20
                 };
             }
 
@@ -680,10 +681,45 @@ private func getEditorHTMLTemplate() -> String {
                 activeIndex = 0;
                 renderSlashMenu();
                 
-                const coords = getCaretCoordinates();
-                slashMenu.style.left = coords.left + 'px';
-                slashMenu.style.top = coords.top + 'px';
+                // Temporarily display block offscreen/hidden to measure its real dimensions
+                slashMenu.style.visibility = 'hidden';
                 slashMenu.style.display = 'block';
+                
+                const menuWidth = slashMenu.offsetWidth || 200;
+                const menuHeight = slashMenu.offsetHeight || 240;
+                
+                const coords = getCaretCoordinates();
+                
+                // Webview viewport bounds
+                const viewportWidth = window.innerWidth;
+                const viewportHeight = window.innerHeight;
+                
+                // Calculate optimal left (horizontal boundary safety)
+                let left = coords.left;
+                if (left + menuWidth > viewportWidth - 12) {
+                    left = viewportWidth - menuWidth - 12; // Shift left
+                }
+                if (left < 12) {
+                    left = 12;
+                }
+                
+                // Calculate optimal top (vertical boundary safety and auto flip-up)
+                let top = coords.top + 6; // Default is below caret
+                if (top + menuHeight > viewportHeight - 12) {
+                    // If overflows bottom edge, try positioning ABOVE caret
+                    const topAbove = coords.top - coords.height - menuHeight - 6;
+                    if (topAbove > 12) {
+                        top = topAbove; // Flip up!
+                    } else {
+                        // If no room above either, align to bottom edge
+                        top = viewportHeight - menuHeight - 12;
+                    }
+                }
+                
+                // Apply resolved safe coordinates and make visible
+                slashMenu.style.left = left + 'px';
+                slashMenu.style.top = top + 'px';
+                slashMenu.style.visibility = 'visible';
                 
                 document.addEventListener('mousedown', clickOutsideHandler);
             }
