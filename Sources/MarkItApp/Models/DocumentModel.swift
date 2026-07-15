@@ -47,9 +47,13 @@ final class DocumentModel: ObservableObject {
 
     func updateTextFromWebview(_ newMarkdown: String, rawHtml: String) {
         guard isSettingInitialText == false else { return }
+        
+        if html != rawHtml {
+            html = rawHtml
+        }
+        
         if text != newMarkdown {
             text = newMarkdown
-            html = rawHtml
             isDirty = true
             scheduleSave()
         }

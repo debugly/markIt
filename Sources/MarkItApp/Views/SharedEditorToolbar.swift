@@ -6,10 +6,7 @@ struct SharedEditorToolbar: View {
     private static let toolbarButtonSize: CGFloat = 24
 
     @ObservedObject var state: AppState
-
-    private var document: DocumentModel {
-        state.document
-    }
+    @ObservedObject var document: DocumentModel
 
     private var fileTitle: String {
         document.url?.lastPathComponent ?? "未命名"
