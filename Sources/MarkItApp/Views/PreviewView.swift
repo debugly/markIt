@@ -34,24 +34,25 @@ struct WebView: NSViewRepresentable {
     func updateNSView(_ webView: WKWebView, context: Context) {
         guard context.coordinator.isEditorReady else { return }
         
-        // If the URL has changed or the document bodyText doesn't match the webview text (edited externally in source mode)
-        if document.url != context.coordinator.loadedURL || document.bodyText != context.coordinator.lastReceivedText {
+        // If the style has changed, update the CSS
+        if document.previewStyle != context.coordinator.loadedStyle {
+            context.coordinator.loadedStyle = document.previewStyle
+            let css = document.loadCSS(for: document.previewStyle)
+            let jsString = "window.updateStyle(\(css.jsEscaped));"
+            webView.evaluateJavaScript(jsString)
+        }
+        
+        // If the active document URL has changed, force reload the markdown content in the WebView
+        if document.url != context.coordinator.loadedURL {
             context.coordinator.loadedURL = document.url
             context.coordinator.lastReceivedText = document.bodyText
+            
             let markdown = document.bodyText
             let jekyllTitle = document.jekyllTitle
             let jekyllDate = document.jekyllDate
             let jekyllTags = document.jekyllTags
             let hasJekyll = !document.frontMatterText.isEmpty
             let jsString = "window.setMarkdownContent(\(markdown.jsEscaped), \(jekyllTitle.jsEscaped), \(jekyllDate.jsEscaped), \(jekyllTags.jsEscaped), \(hasJekyll));"
-            webView.evaluateJavaScript(jsString)
-        }
-        
-        // If the style has changed, update the CSS
-        if document.previewStyle != context.coordinator.loadedStyle {
-            context.coordinator.loadedStyle = document.previewStyle
-            let css = document.loadCSS(for: document.previewStyle)
-            let jsString = "window.updateStyle(\(css.jsEscaped));"
             webView.evaluateJavaScript(jsString)
         }
     }
@@ -171,37 +172,6 @@ private func getEditorHTMLTemplate() -> String {
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <script>
             \(bundleJS)
-        </script>
-        <script>
-            window.onerror = function(message, source, lineno, colno, error) {
-                const errorDiv = document.createElement('div');
-                errorDiv.style.color = 'red';
-                errorDiv.style.padding = '20px';
-                errorDiv.style.background = '#fee2e2';
-                errorDiv.style.border = '1px solid #fca5a5';
-                errorDiv.style.borderRadius = '6px';
-                errorDiv.style.margin = '20px';
-                errorDiv.style.fontFamily = 'monospace';
-                errorDiv.style.fontSize = '12px';
-                errorDiv.style.whiteSpace = 'pre-wrap';
-                errorDiv.innerText = 'JS Error: ' + message + '\nAt: ' + source + ':' + lineno + ':' + colno + (error ? '\nStack: ' + error.stack : '');
-                document.body.appendChild(errorDiv);
-                return false;
-            };
-            window.addEventListener('unhandledrejection', function(event) {
-                const errorDiv = document.createElement('div');
-                errorDiv.style.color = 'red';
-                errorDiv.style.padding = '20px';
-                errorDiv.style.background = '#fee2e2';
-                errorDiv.style.border = '1px solid #fca5a5';
-                errorDiv.style.borderRadius = '6px';
-                errorDiv.style.margin = '20px';
-                errorDiv.style.fontFamily = 'monospace';
-                errorDiv.style.fontSize = '12px';
-                errorDiv.style.whiteSpace = 'pre-wrap';
-                errorDiv.innerText = 'Unhandled Rejection: ' + event.reason;
-                document.body.appendChild(errorDiv);
-            });
         </script>
         <style>
             :root {
@@ -428,6 +398,9 @@ private func getEditorHTMLTemplate() -> String {
 
             const { Editor, mergeAttributes, StarterKit, Markdown, Heading, TableKit } = Tiptap;
 
+            // Disable native context menu to prevent right-click reload and white screens
+            document.addEventListener('contextmenu', event => event.preventDefault());
+
             let isUpdatingFromSwift = false;
 
             const CustomHeading = Heading.extend({
@@ -487,8 +460,295 @@ private func getEditorHTMLTemplate() -> String {
                         markdown: markdown,
                         html: html
                     });
+
+                    // Synchronous, robust, native Tiptap-driven trigger and search
+                    const { selection } = editor.state;
+                    const currentPos = selection.from;
+
+                    if (!slashMenuOpen) {
+                        if (currentPos > 0) {
+                            const text = editor.state.doc.textBetween(currentPos - 1, currentPos);
+                            if (text === String.fromCharCode(92) || text === '/' || text === '、') {
+                                triggerPos = currentPos - 1;
+                                console.log("onUpdate trigger: opening slash menu at pos", triggerPos);
+                                openSlashMenu();
+                            }
+                        }
+                    } else {
+                        if (currentPos <= triggerPos) {
+                            closeSlashMenu("onUpdate-pos-less-equal (current: " + currentPos + ", trigger: " + triggerPos + ")");
+                            return;
+                        }
+                        
+                        const text = editor.state.doc.textBetween(triggerPos, currentPos);
+                        const triggerChar = text[0];
+                        if (triggerChar !== String.fromCharCode(92) && triggerChar !== '/' && triggerChar !== '、') {
+                            closeSlashMenu("onUpdate-invalid-char (char: " + triggerChar + ")");
+                            return;
+                        }
+                        
+                        const query = text.slice(1).toLowerCase();
+                        if (query.includes(' ') || query.includes(String.fromCharCode(10))) {
+                            closeSlashMenu("onUpdate-space-or-newline (query: " + query + ")");
+                            return;
+                        }
+                        
+                        filteredItems = menuItems.filter(item => 
+                            item.title.toLowerCase().includes(query) || 
+                            item.id.toLowerCase().includes(query)
+                        );
+                        
+                        activeIndex = 0;
+                        renderSlashMenu();
+                    }
+                },
+                onSelectionUpdate({ editor }) {
+                    if (!slashMenuOpen) return;
+                    const { selection } = editor.state;
+                    const currentPos = selection.from;
+                    // Auto-close if selection jumps outside trigger bounds
+                    if (currentPos <= triggerPos || currentPos > triggerPos + 15) {
+                        closeSlashMenu("selection-update-out-of-bounds");
+                    }
                 }
             });
+
+            // --- SLASH / BACKSLASH COMMAND MENU SYSTEM ---
+            const slashStyle = document.createElement('style');
+            slashStyle.textContent = `
+                .slash-menu-item {
+                    display: flex;
+                    align-items: center;
+                    padding: 6px 8px;
+                    border-radius: 6px;
+                    cursor: pointer;
+                    font-size: 13px;
+                    color: var(--text-color);
+                    transition: background 0.1s, transform 0.1s;
+                }
+                .slash-menu-item.active {
+                    background: var(--border-color) !important;
+                }
+                .slash-menu-item:active {
+                    transform: scale(0.98);
+                }
+            `;
+            document.head.appendChild(slashStyle);
+
+            const menuItems = [
+                { id: 'heading1', title: '一级标题 (H1)', icon: 'H1', command: (editor) => editor.chain().focus().toggleHeading({ level: 1 }).run() },
+                { id: 'heading2', title: '二级标题 (H2)', icon: 'H2', command: (editor) => editor.chain().focus().toggleHeading({ level: 2 }).run() },
+                { id: 'heading3', title: '三级标题 (H3)', icon: 'H3', command: (editor) => editor.chain().focus().toggleHeading({ level: 3 }).run() },
+                { id: 'bold', title: '加粗 (Bold)', icon: 'B', command: (editor) => editor.chain().focus().toggleBold().run() },
+                { id: 'italic', title: '斜体 (Italic)', icon: 'I', command: (editor) => editor.chain().focus().toggleItalic().run() },
+                { id: 'blockquote', title: '引用 (Quote)', icon: '❝', command: (editor) => editor.chain().focus().toggleBlockquote().run() },
+                { id: 'bulletList', title: '无序列表 (Bullet)', icon: '•', command: (editor) => editor.chain().focus().toggleBulletList().run() },
+                { id: 'orderedList', title: '有序列表 (Number)', icon: '1.', command: (editor) => editor.chain().focus().toggleOrderedList().run() },
+                { id: 'taskList', title: '任务列表 (Todo)', icon: '☑', command: (editor) => editor.chain().focus().toggleTaskList().run() },
+                { id: 'codeBlock', title: '代码块 (Code)', icon: '<>', command: (editor) => editor.chain().focus().toggleCodeBlock().run() },
+                { id: 'table', title: '表格 (Table)', icon: '田', command: (editor) => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() }
+            ];
+
+            let slashMenuOpen = false;
+            let activeIndex = 0;
+            let filteredItems = [...menuItems];
+            let triggerPos = null;
+
+            const slashMenu = document.createElement('div');
+            slashMenu.id = 'slash-menu';
+            slashMenu.style.cssText = `
+                position: absolute;
+                display: none;
+                width: 200px;
+                max-height: 240px;
+                overflow-y: auto;
+                background: var(--input-bg);
+                border: 1px solid var(--border-color);
+                border-radius: 10px;
+                box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+                z-index: 99999;
+                font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+                padding: 4px;
+            `;
+            document.body.appendChild(slashMenu);
+
+            function getCaretCoordinates() {
+                const sel = window.getSelection();
+                if (!sel.rangeCount) return { top: 0, left: 0 };
+                const range = sel.getRangeAt(0).cloneRange();
+                let rect = range.getBoundingClientRect();
+                if (rect.width === 0 && rect.height === 0) {
+                    const span = document.createElement('span');
+                    span.appendChild(document.createTextNode('\\u200b'));
+                    range.insertNode(span);
+                    rect = span.getBoundingClientRect();
+                    const parent = span.parentNode;
+                    parent.removeChild(span);
+                    parent.normalize();
+                }
+                return {
+                    top: rect.bottom + window.scrollY + 6,
+                    left: rect.left + window.scrollX
+                };
+            }
+
+            function renderSlashMenu() {
+                slashMenu.innerHTML = '';
+                if (filteredItems.length === 0) {
+                    const empty = document.createElement('div');
+                    empty.innerText = '未找到匹配格式';
+                    empty.style.cssText = 'padding: 8px; color: var(--label-color); text-align: center; font-size: 13px;';
+                    slashMenu.appendChild(empty);
+                    return;
+                }
+
+                filteredItems.forEach((item, index) => {
+                    const el = document.createElement('div');
+                    el.className = 'slash-menu-item' + (index === activeIndex ? ' active' : '');
+                    
+                    const iconEl = document.createElement('span');
+                    iconEl.innerText = item.icon;
+                    iconEl.style.cssText = `
+                        display: inline-flex;
+                        align-items: center;
+                        justify-content: center;
+                        width: 20px;
+                        height: 20px;
+                        background: var(--table-th-bg);
+                        border-radius: 4px;
+                        margin-right: 8px;
+                        font-weight: bold;
+                        font-size: 10px;
+                        color: var(--label-color);
+                    `;
+                    el.appendChild(iconEl);
+
+                    const titleEl = document.createElement('span');
+                    titleEl.innerText = item.title;
+                    el.appendChild(titleEl);
+
+                    el.addEventListener('mouseenter', () => {
+                        activeIndex = index;
+                        const children = slashMenu.querySelectorAll('.slash-menu-item');
+                        children.forEach((c, idx) => {
+                            if (idx === index) {
+                                c.classList.add('active');
+                            } else {
+                                c.classList.remove('active');
+                            }
+                        });
+                    });
+                    
+                    el.addEventListener('mousedown', (e) => {
+                        e.preventDefault();
+                        selectSlashItem(item);
+                    });
+
+                    slashMenu.appendChild(el);
+                });
+            }
+
+            function selectSlashItem(item) {
+                const { state } = editor;
+                const { selection } = state;
+                const end = selection.from;
+                
+                // 1. Save all current active marks (at the cursor/slash character)
+                const previousMarks = state.storedMarks || selection.$from.marks() || [];
+                
+                // 2. Delete the slash trigger character (which clears storedMarks)
+                editor.chain().focus().deleteRange({ from: triggerPos, to: end }).run();
+                
+                // 3. Restore the saved marks to storedMarks
+                if (previousMarks.length > 0) {
+                    let tr = editor.view.state.tr;
+                    previousMarks.forEach(mark => {
+                        tr = tr.addStoredMark(mark);
+                    });
+                    editor.view.dispatch(tr);
+                }
+                
+                // 4. Run the slash menu command (which will toggle/apply the selected option)
+                item.command(editor);
+                
+                closeSlashMenu("selectSlashItem");
+            }
+
+            function openSlashMenu() {
+                slashMenuOpen = true;
+                filteredItems = [...menuItems];
+                activeIndex = 0;
+                renderSlashMenu();
+                
+                const coords = getCaretCoordinates();
+                slashMenu.style.left = coords.left + 'px';
+                slashMenu.style.top = coords.top + 'px';
+                slashMenu.style.display = 'block';
+                
+                document.addEventListener('mousedown', clickOutsideHandler);
+            }
+
+            function scrollActiveItemIntoView() {
+                const activeEl = slashMenu.querySelector('.slash-menu-item.active');
+                if (activeEl) {
+                    activeEl.scrollIntoView({ block: 'nearest' });
+                }
+            }
+
+            const editorEl = document.querySelector('#editor');
+            editorEl.addEventListener('keydown', function(event) {
+                if (slashMenuOpen) {
+                    if (event.key === 'ArrowDown') {
+                        event.preventDefault();
+                        activeIndex = (activeIndex + 1) % filteredItems.length;
+                        renderSlashMenu();
+                        scrollActiveItemIntoView();
+                        return;
+                    }
+                    if (event.key === 'ArrowUp') {
+                        event.preventDefault();
+                        activeIndex = (activeIndex - 1 + filteredItems.length) % filteredItems.length;
+                        renderSlashMenu();
+                        scrollActiveItemIntoView();
+                        return;
+                    }
+                    if (event.key === 'Enter') {
+                        event.preventDefault();
+                        if (filteredItems[activeIndex]) {
+                            selectSlashItem(filteredItems[activeIndex]);
+                        }
+                        return;
+                    }
+                    if (event.key === 'Escape') {
+                        event.preventDefault();
+                        closeSlashMenu("escapeKey");
+                        return;
+                    }
+                } else {
+                    if (event.key === 'Escape') {
+                        // If no slash menu is open, pressing Esc clears all active inline marks (bold, italic, etc.)
+                        const activeMarks = editor.state.storedMarks || editor.state.selection.$from.marks();
+                        if (activeMarks && activeMarks.length > 0) {
+                            event.preventDefault();
+                            editor.chain().focus().unsetAllMarks().run();
+                            editor.view.dispatch(editor.view.state.tr.setStoredMarks([]));
+                        }
+                    }
+                }
+            }, true);
+
+            function closeSlashMenu(reason) {
+                console.log("closeSlashMenu triggered. Reason:", reason);
+                slashMenuOpen = false;
+                slashMenu.style.display = 'none';
+                document.removeEventListener('mousedown', clickOutsideHandler);
+            }
+
+            function clickOutsideHandler(event) {
+                if (!slashMenu.contains(event.target)) {
+                    closeSlashMenu("clickOutside");
+                }
+            }
 
             document.addEventListener('copy', function(e) {
                 const selection = window.getSelection();
@@ -648,7 +908,6 @@ struct PreviewView: View {
                 SourceEditorView(document: state.document)
             }
         }
-        .frame(idealWidth: 500)
     }
 }
 
