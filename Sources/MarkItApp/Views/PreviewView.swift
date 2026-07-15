@@ -104,6 +104,37 @@ private func getEditorHTMLTemplate() -> String {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <script>
+            window.onerror = function(message, source, lineno, colno, error) {
+                const errorDiv = document.createElement('div');
+                errorDiv.style.color = 'red';
+                errorDiv.style.padding = '20px';
+                errorDiv.style.background = '#fee2e2';
+                errorDiv.style.border = '1px solid #fca5a5';
+                errorDiv.style.borderRadius = '6px';
+                errorDiv.style.margin = '20px';
+                errorDiv.style.fontFamily = 'monospace';
+                errorDiv.style.fontSize = '12px';
+                errorDiv.style.whiteSpace = 'pre-wrap';
+                errorDiv.innerText = 'JS Error: ' + message + '\nAt: ' + source + ':' + lineno + ':' + colno + (error ? '\nStack: ' + error.stack : '');
+                document.body.appendChild(errorDiv);
+                return false;
+            };
+            window.addEventListener('unhandledrejection', function(event) {
+                const errorDiv = document.createElement('div');
+                errorDiv.style.color = 'red';
+                errorDiv.style.padding = '20px';
+                errorDiv.style.background = '#fee2e2';
+                errorDiv.style.border = '1px solid #fca5a5';
+                errorDiv.style.borderRadius = '6px';
+                errorDiv.style.margin = '20px';
+                errorDiv.style.fontFamily = 'monospace';
+                errorDiv.style.fontSize = '12px';
+                errorDiv.style.whiteSpace = 'pre-wrap';
+                errorDiv.innerText = 'Unhandled Rejection: ' + event.reason;
+                document.body.appendChild(errorDiv);
+            });
+        </script>
         <style>
             html, body {
                 margin: 0;
@@ -186,20 +217,59 @@ private func getEditorHTMLTemplate() -> String {
         </div>
 
         <script type="module">
-            import { Editor } from 'https://esm.sh/@tiptap/core@3';
-            import StarterKit from 'https://esm.sh/@tiptap/starter-kit@3';
-            import { Markdown } from 'https://esm.sh/@tiptap/markdown@3';
-            import { TableKit } from 'https://esm.sh/@tiptap/extension-table@3';
+            import { Editor, mergeAttributes } from 'https://esm.sh/@tiptap/core@3';
+            import StarterKit from 'https://esm.sh/@tiptap/starter-kit@3?deps=@tiptap/core@3';
+            import { Markdown } from 'https://esm.sh/@tiptap/markdown@3?deps=@tiptap/core@3';
+            import Heading from 'https://esm.sh/@tiptap/extension-heading@3?deps=@tiptap/core@3';
+            import { TableKit } from 'https://esm.sh/@tiptap/extension-table@3?deps=@tiptap/core@3';
 
             let isUpdatingFromSwift = false;
+
+            const CustomHeading = Heading.extend({
+                renderHTML({ node, HTMLAttributes }) {
+                    const level = node.attrs.level;
+                    let style = '';
+                    if (level === 1) {
+                        style = 'font-size: 28px; color: black; margin-top: 1.5em; margin-bottom: 1em;';
+                    } else if (level === 2) {
+                        style = 'font-size: 24px; border-bottom: 1px solid #cccccc; padding-bottom: 0.3em; color: black; margin-top: 1.5em; margin-bottom: 1em;';
+                    } else if (level === 3) {
+                        style = 'font-size: 18px; margin-top: 1em; margin-bottom: 0.5em;';
+                    }
+                    
+                    return [
+                        `h${level}`,
+                        mergeAttributes(this.options.HTMLAttributes, HTMLAttributes, { style }),
+                        0
+                    ];
+                }
+            });
 
             const editor = new Editor({
                 element: document.querySelector('#editor'),
                 extensions: [
-                    StarterKit,
+                    StarterKit.configure({
+                        heading: false
+                    }),
                     Markdown,
+                    CustomHeading,
                     TableKit.configure({
-                        resizable: true,
+                        table: {
+                            resizable: true,
+                            HTMLAttributes: {
+                                style: 'border-collapse: collapse; margin: 1.5em 0; width: 100%; border: 1px solid #ddd;',
+                            }
+                        },
+                        tableHeader: {
+                            HTMLAttributes: {
+                                style: 'border: 1px solid #ddd; padding: 8px 12px; background-color: #f6f8fa; font-weight: bold; text-align: left;',
+                            }
+                        },
+                        tableCell: {
+                            HTMLAttributes: {
+                                style: 'border: 1px solid #ddd; padding: 8px 12px; vertical-align: top;',
+                            }
+                        }
                     })
                 ],
                 content: '',
@@ -213,6 +283,70 @@ private func getEditorHTMLTemplate() -> String {
                         html: html
                     });
                 }
+            });
+
+            document.addEventListener('copy', function(e) {
+                const selection = window.getSelection();
+                if (!selection.rangeCount) return;
+                
+                const container = document.createElement('div');
+                for (let i = 0; i < selection.rangeCount; i++) {
+                    container.appendChild(selection.getRangeAt(i).cloneContents());
+                }
+                
+                // 1. Remove all ProseMirror trailing break helper elements completely
+                const trailingBreaks = container.querySelectorAll('.ProseMirror-trailingBreak');
+                trailingBreaks.forEach(br => br.remove());
+                
+                // 2. Process all elements to strip other ProseMirror specific classes and data attributes
+                const allElements = container.querySelectorAll('*');
+                allElements.forEach(el => {
+                    // Strip class list from any ProseMirror-related classes
+                    const classes = Array.from(el.classList);
+                    classes.forEach(c => {
+                        if (c.startsWith('ProseMirror')) {
+                            el.classList.remove(c);
+                        }
+                    });
+                    if (el.classList.length === 0) {
+                        el.removeAttribute('class');
+                    }
+                    
+                    // Strip data attributes and other editing helpers
+                    const attrs = Array.from(el.attributes);
+                    attrs.forEach(attr => {
+                        if (attr.name.startsWith('data-') || attr.name === 'contenteditable') {
+                            el.removeAttribute(attr.name);
+                        }
+                    });
+                });
+                
+                // 3. Keep inline styles on Heading elements (H1, H2, H3) and Tables (from previous steps)
+                const h2s = container.querySelectorAll('h2');
+                h2s.forEach(h2 => {
+                    h2.setAttribute('style', 'font-size: 24px; border-bottom: 1px solid #cccccc; padding-bottom: 0.3em; color: black; margin-top: 1.5em; margin-bottom: 1em;');
+                });
+                const h1s = container.querySelectorAll('h1');
+                h1s.forEach(h1 => {
+                    h1.setAttribute('style', 'font-size: 28px; color: black; margin-top: 1.5em; margin-bottom: 1em;');
+                });
+                const tables = container.querySelectorAll('table');
+                tables.forEach(table => {
+                    table.setAttribute('style', 'border-collapse: collapse; margin: 1.5em 0; width: 100%; border: 1px solid #ddd;');
+                });
+                const ths = container.querySelectorAll('th');
+                ths.forEach(th => {
+                    th.setAttribute('style', 'border: 1px solid #ddd; padding: 8px 12px; background-color: #f6f8fa; font-weight: bold; text-align: left;');
+                });
+                const tds = container.querySelectorAll('td');
+                tds.forEach(td => {
+                    td.setAttribute('style', 'border: 1px solid #ddd; padding: 8px 12px; vertical-align: top;');
+                });
+                
+                // 4. Set custom clean HTML and normal plain text to clipboard
+                e.clipboardData.setData('text/html', container.innerHTML);
+                e.clipboardData.setData('text/plain', selection.toString());
+                e.preventDefault();
             });
 
             window.setMarkdownContent = function(markdown) {
