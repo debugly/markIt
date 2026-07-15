@@ -48,18 +48,20 @@ struct SharedEditorToolbar: View {
 
             Spacer()
 
-            Button {
-                state.showEditor.toggle()
-            } label: {
-                Image(systemName: "square.and.pencil")
-                    .font(.system(size: 18, weight: .medium))
-                    .frame(width: Self.toolbarButtonSize, height: Self.toolbarButtonSize)
-            }
-            .buttonStyle(.plain)
-            .focusable(false)
-            .help("显示/隐藏编辑器")
 
             if document.url != nil {
+                Button {
+                    state.toggleEditMode()
+                } label: {
+                    Image(systemName: state.editMode == .wysiwyg ? "curlybraces" : "doc.richtext")
+                        .font(.system(size: 16, weight: .medium))
+                        .frame(width: Self.toolbarButtonSize, height: Self.toolbarButtonSize)
+                }
+                .buttonStyle(.plain)
+                .focusable(false)
+                .help(state.editMode == .wysiwyg ? "源码编辑" : "所见即所得编辑")
+                .padding(.trailing, 4)
+
                 Text(statsText)
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)

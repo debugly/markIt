@@ -13,15 +13,18 @@ final class AppState: ObservableObject {
     @Published var showSidebar = true {
         didSet { startTransitionLock() }
     }
-    @Published var showEditor = false {
-        didSet { startTransitionLock() }
-    }
-    @Published var showPreview = true {
-        didSet { startTransitionLock() }
-    }
     @Published var showUnsavedAlert = false
-    @Published var editorWidth: CGFloat = 200
     @Published var isTransitioning = false
+
+    enum EditMode {
+        case wysiwyg
+        case source
+    }
+    @Published var editMode: EditMode = .wysiwyg
+
+    func toggleEditMode() {
+        editMode = (editMode == .wysiwyg) ? .source : .wysiwyg
+    }
 
     private var transitionWorkItem: DispatchWorkItem?
 
@@ -228,7 +231,7 @@ final class AppState: ObservableObject {
     }
 
     func closeWindowIfNeeded() {
-        if !showSidebar && !showEditor && !showPreview {
+        if !showSidebar && document.url == nil {
             NSApp.keyWindow?.performClose(nil)
         }
     }

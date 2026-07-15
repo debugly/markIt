@@ -6,30 +6,23 @@
 //
 import Foundation
 import AppKit
-import Ink
 
 final class DocumentModel: ObservableObject {
     @Published private(set) var url: URL?
-    @Published var text: String = "" {
-        didSet { renderHTML() }
-    }
+    @Published var text: String = ""
     @Published private(set) var isDirty = false
-    @Published private(set) var html: String = ""
-    @Published var previewStyle: String = "GitHub.css" {
-        didSet { renderHTML() }
-    }
+    @Published var html: String = ""
+    @Published var previewStyle: String = "GitHub.css"
 
     var plainText: String {
-        guard !text.isEmpty else { return "" }
-        let rawHtml = parser.html(from: text)
-        return rawHtml.replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
+        guard !html.isEmpty else { return "" }
+        return html.replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
     }
 
     private var saveTask: Task<Void, Never>?
     private var isSettingInitialText = false
-    private let parser = MarkdownParser()
 
-    private func loadCSS(for style: String) -> String {
+    func loadCSS(for style: String) -> String {
         guard let url = Bundle.main.url(forResource: style.replacingOccurrences(of: ".css", with: ""), withExtension: "css"),
               let css = try? String(contentsOf: url, encoding: .utf8) else {
             return ""
@@ -37,19 +30,9 @@ final class DocumentModel: ObservableObject {
         return css
     }
 
-    func renderHTML(style: String) {
-        guard !text.isEmpty else {
-            html = ""
-            return
-        }
+    func renderExportHTML(rawHtml: String, style: String) -> String {
         let customCSS = loadCSS(for: style)
-        var rawHtml = parser.html(from: text)
-        
-        if style == "无" {
-            rawHtml = "<pre>\(rawHtml.escapingHTML())</pre>"
-        }
-        
-        html = """
+        return """
         <html>
         <head>
             <meta charset="utf-8">
@@ -62,8 +45,14 @@ final class DocumentModel: ObservableObject {
         """
     }
 
-    private func renderHTML() {
-        renderHTML(style: previewStyle)
+    func updateTextFromWebview(_ newMarkdown: String, rawHtml: String) {
+        guard isSettingInitialText == false else { return }
+        if text != newMarkdown {
+            text = newMarkdown
+            html = rawHtml
+            isDirty = true
+            scheduleSave()
+        }
     }
 
     func open(url: URL) {

@@ -13,7 +13,7 @@ struct ContentView: View {
                 if state.showSidebar {
                     SidebarView(state: state)
                 }
-                EditorPreviewContainer(state: state)
+                PreviewView(state: state)
                     .layoutPriority(1)
             }
         }
@@ -40,8 +40,6 @@ struct ContentView: View {
             }
         }
         .onChange(of: state.showSidebar) { _ in state.closeWindowIfNeeded() }
-        .onChange(of: state.showEditor) { _ in state.closeWindowIfNeeded() }
-        .onChange(of: state.showPreview) { _ in state.closeWindowIfNeeded() }
         .alert("是否保存未命名的文件？", isPresented: $state.showUnsavedAlert) {
             Button("保存") { state.resolveUnsavedDecision(.save) }
             Button("放弃", role: .destructive) { state.resolveUnsavedDecision(.discard) }

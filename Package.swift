@@ -8,13 +8,11 @@ let package = Package(
         .executable(name: "Markit", targets: ["MarkItApp"])
     ],
     dependencies: [
-        .package(path: "../Ink")
     ],
     targets: [
         .executableTarget(
             name: "MarkItApp",
             dependencies: [
-                .product(name: "Ink", package: "Ink")
             ],
             path: ".",
             exclude: [

@@ -5,12 +5,6 @@ options:
     macOS: "12.0"
   xcodeVersion: "15.0"
 
-packages:
-  Ink:
-    path: ../Ink
-    # url: https://github.com/JohnSundell/Ink.git
-    # from: 0.6.0
-
 targets:
   Markit:
     type: application
@@ -18,14 +12,12 @@ targets:
     sources:
       - path: Sources/MarkItApp
       - path: Resources
-    dependencies:
-      - package: Ink
     settings:
       base:
         PRODUCT_NAME: Markit
         PRODUCT_BUNDLE_IDENTIFIER: com.debugly.markit
         MARKETING_VERSION: "0.2.0"
-        CURRENT_PROJECT_VERSION: "0708"
+        CURRENT_PROJECT_VERSION: "0715"
         INFOPLIST_FILE: Resources/Info.plist
         SWIFT_VERSION: "5.9"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon

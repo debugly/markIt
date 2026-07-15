@@ -122,18 +122,11 @@ struct MarkItApp: App {
                 .keyboardShortcut("1", modifiers: [.command, .option])
 
                 Button {
-                    state.showEditor.toggle()
+                    state.toggleEditMode()
                 } label: {
-                    Label("显示/隐藏编辑器", systemImage: "square.and.pencil")
+                    Label(state.editMode == .wysiwyg ? "切换到源码编辑" : "切换到所见即所得", systemImage: "curlybraces")
                 }
-                .keyboardShortcut("2", modifiers: [.command, .option])
-
-                Button {
-                    state.showPreview.toggle()
-                } label: {
-                    Label("显示/隐藏预览", systemImage: "doc.richtext")
-                }
-                .keyboardShortcut("3", modifiers: [.command, .option])
+                .keyboardShortcut("e", modifiers: [.command, .option])
             }
         }
         .windowStyle(.hiddenTitleBar)
