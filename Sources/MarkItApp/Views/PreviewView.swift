@@ -138,6 +138,45 @@ private func getEditorHTMLTemplate() -> String {
             .tiptap ul[data-type="taskList"] li > div {
                 flex: 1;
             }
+            /* Add table styling in editor */
+            .tiptap table {
+                border-collapse: collapse;
+                table-layout: fixed;
+                width: 100%;
+                margin: 1.5em 0;
+                overflow: hidden;
+            }
+            .tiptap td, .tiptap th {
+                border: 1px solid #ddd;
+                box-sizing: border-box;
+                min-width: 1em;
+                padding: 8px 12px;
+                position: relative;
+                vertical-align: top;
+            }
+            .tiptap th {
+                background-color: #f6f8fa;
+                font-weight: bold;
+                text-align: left;
+            }
+            .tiptap .selectedCell:after {
+                background: rgba(200, 200, 255, 0.4);
+                content: "";
+                left: 0; right: 0; top: 0; bottom: 0;
+                pointer-events: none;
+                position: absolute;
+                z-index: 2;
+            }
+            .tiptap .column-resize-handle {
+                background-color: #3b82f6;
+                bottom: -2px;
+                position: absolute;
+                right: -2px;
+                top: 0;
+                width: 4px;
+                z-index: 20;
+                pointer-events: none;
+            }
         </style>
         <style id="theme-style"></style>
     </head>
@@ -150,6 +189,7 @@ private func getEditorHTMLTemplate() -> String {
             import { Editor } from 'https://esm.sh/@tiptap/core@3';
             import StarterKit from 'https://esm.sh/@tiptap/starter-kit@3';
             import { Markdown } from 'https://esm.sh/@tiptap/markdown@3';
+            import { TableKit } from 'https://esm.sh/@tiptap/extension-table@3';
 
             let isUpdatingFromSwift = false;
 
@@ -157,7 +197,10 @@ private func getEditorHTMLTemplate() -> String {
                 element: document.querySelector('#editor'),
                 extensions: [
                     StarterKit,
-                    Markdown
+                    Markdown,
+                    TableKit.configure({
+                        resizable: true,
+                    })
                 ],
                 content: '',
                 contentType: 'markdown',
