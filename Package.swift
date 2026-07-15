@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "Markit",
-    platforms: [.macOS(.v12)],
+    platforms: [.macOS(.v11)],
     products: [
         .executable(name: "Markit", targets: ["MarkItApp"])
     ],

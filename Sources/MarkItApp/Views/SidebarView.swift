@@ -118,21 +118,8 @@ struct SidebarView: View {
                 }
             )
         }
-        .alert("确认删除该文件？", isPresented: Binding(
-            get: { deleteTarget != nil },
-            set: { if !$0 { deleteTarget = nil } }
-        )) {
-            Button("取消", role: .cancel) {}
-            Button("删除", role: .destructive) {
-                if let target = deleteTarget {
-                    state.deleteItem(at: target)
-                }
-                deleteTarget = nil
-            }
-        } message: {
-            if let target = deleteTarget {
-                Text(target.lastPathComponent)
-            }
+        .deleteConfirmationAlert(deleteTarget: $deleteTarget) { target in
+            state.deleteItem(at: target)
         }
     }
 
@@ -185,7 +172,7 @@ private struct SidebarSectionHeader: View {
     var body: some View {
         Text(title)
             .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(.secondary)
+            .foregroundColor(.secondary)
             .textCase(.uppercase)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 8)
@@ -328,7 +315,11 @@ private struct SidebarTreeNodeView: View {
             Button("创建副本") { openPrompt(.duplicate(target: node.url)) }
             Divider()
             Button("刷新") { state.refresh() }
-            Button("删除", role: .destructive) { deleteTarget = node.url }
+            if #available(macOS 12.0, *) {
+                Button("删除", role: .destructive) { deleteTarget = node.url }
+            } else {
+                Button("删除") { deleteTarget = node.url }
+            }
             Button("在 Finder 中显示") { state.revealInFinder(node.url) }
         }
     }

@@ -61,16 +61,14 @@ struct SharedEditorToolbar: View {
 
                 Text(statsText)
                     .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
+                    .foregroundColor(.secondary)
                     .padding(.leading, 2)
             }
         }
         .padding(.horizontal, 20)
         .frame(height: 44)
-        .background(.bar)
-        .overlay(alignment: .bottom) {
-            Divider()
-        }
+        .background(CompatBarView())
+        .overlay(Divider(), alignment: .bottom)
     }
 }
 

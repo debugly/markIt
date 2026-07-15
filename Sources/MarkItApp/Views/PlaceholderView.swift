@@ -9,13 +9,13 @@ struct PlaceholderView: View {
         VStack(spacing: 12) {
             Image(systemName: systemImage)
                 .font(.system(size: 36, weight: .medium))
-                .foregroundStyle(.secondary)
+                .foregroundColor(.secondary)
             Text(title)
                 .font(.title3)
-                .foregroundStyle(.primary)
+                .foregroundColor(.primary)
             Text(message)
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .foregroundColor(.secondary)
         }
         .multilineTextAlignment(.center)
         .frame(maxWidth: .infinity, maxHeight: .infinity)

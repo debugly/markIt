@@ -928,7 +928,7 @@ struct SourceEditorView: View {
         .lineSpacing(6)
         .padding(.horizontal, 36)
         .padding(.vertical, 24)
-        .background(Color(nsColor: .textBackgroundColor))
+        .background(Color(.textBackgroundColor))
     }
 }
 
@@ -939,7 +939,7 @@ struct PreviewView: View {
         VStack(spacing: 0) {
             if state.editMode == .wysiwyg {
                 WebView(document: state.document)
-                    .background(Color(nsColor: .textBackgroundColor))
+                    .background(Color(.textBackgroundColor))
             } else {
                 SourceEditorView(document: state.document)
             }

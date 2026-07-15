@@ -18,11 +18,11 @@ struct StylePickerSheet: View {
                 } label: {
                     HStack {
                         Text(style)
-                            .foregroundStyle(selectedStyle == style ? .blue : .primary)
+                            .foregroundColor(selectedStyle == style ? .blue : .primary)
                         Spacer()
                         if selectedStyle == style {
                             Image(systemName: "checkmark")
-                                .foregroundStyle(.blue)
+                                .foregroundColor(.blue)
                         }
                     }
                     .frame(height: 34)

@@ -18,11 +18,11 @@ struct ContentView: View {
             }
         }
         .ignoresSafeArea(.container, edges: .top) // 强制忽略顶部安全区域
-        .background(.regularMaterial)
-        .background {
+        .background(CompatMaterialView())
+        .background(
             ContentGaussianBlurBackground()
                 .overlay(Color.white.opacity(0.08))
-        }
+        )
         .background(WindowButtonAlignmentConfigurator())
         .onDrop(of: [UTType.fileURL], isTargeted: nil) { providers in
             state.openDroppedFiles(from: providers)
@@ -40,12 +40,8 @@ struct ContentView: View {
             }
         }
         .onChange(of: state.showSidebar) { _ in state.closeWindowIfNeeded() }
-        .alert("是否保存未命名的文件？", isPresented: $state.showUnsavedAlert) {
-            Button("保存") { state.resolveUnsavedDecision(.save) }
-            Button("放弃", role: .destructive) { state.resolveUnsavedDecision(.discard) }
-            Button("取消", role: .cancel) { state.resolveUnsavedDecision(.cancel) }
-        } message: {
-            Text("你的更改尚未保存。")
+        .showUnsavedAlertCompat(isPresented: $state.showUnsavedAlert) { decision in
+            state.resolveUnsavedDecision(decision)
         }
     }
 }

@@ -2,7 +2,7 @@ name: Markit
 options:
   bundleIdPrefix: com.debugly
   deploymentTarget:
-    macOS: "12.0"
+    macOS: "11.0"
   xcodeVersion: "15.0"
 
 targets:
@@ -16,11 +16,13 @@ targets:
       base:
         PRODUCT_NAME: Markit
         PRODUCT_BUNDLE_IDENTIFIER: com.debugly.markit
-        MARKETING_VERSION: "0.2.0"
+        MARKETING_VERSION: "0.3.0"
         CURRENT_PROJECT_VERSION: "0715"
         INFOPLIST_FILE: Resources/Info.plist
         SWIFT_VERSION: "5.9"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOLS: "NO"
+        ASSETCATALOG_COMPILER_GENERATE_OBJC_ASSET_SYMBOLS: "NO"
 
 schemes:
   Markit:

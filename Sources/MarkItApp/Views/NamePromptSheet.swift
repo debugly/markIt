@@ -17,7 +17,7 @@ struct NamePromptSheet: View {
 
             Text(message)
                 .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .foregroundColor(.secondary)
 
             TextField("名称", text: $text)
                 .textFieldStyle(.roundedBorder)
