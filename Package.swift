@@ -27,6 +27,7 @@ let package = Package(
             ],
             resources: [
                 .copy("Resources/Styles"),
+                .copy("Resources/JS"),
                 .process("Resources/AppIcon.xcassets")
             ]
         )

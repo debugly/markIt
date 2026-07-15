@@ -139,13 +139,39 @@ struct WebView: NSViewRepresentable {
     }
 }
 
+private func loadTiptapBundle() -> String {
+    // 1. Try finding in the flattened bundle root
+    if let url = Bundle.main.url(forResource: "tiptap-bundle", withExtension: "js") {
+        if let content = try? String(contentsOf: url, encoding: .utf8) {
+            return content
+        }
+    }
+    // 2. Try finding under JS subdirectory (Standard SwiftPM copy structure)
+    if let url = Bundle.main.url(forResource: "tiptap-bundle", withExtension: "js", subdirectory: "JS") {
+        if let content = try? String(contentsOf: url, encoding: .utf8) {
+            return content
+        }
+    }
+    // 3. Try finding under Resources/JS subdirectory (Custom folder copy structure)
+    if let url = Bundle.main.url(forResource: "tiptap-bundle", withExtension: "js", subdirectory: "Resources/JS") {
+        if let content = try? String(contentsOf: url, encoding: .utf8) {
+            return content
+        }
+    }
+    return ""
+}
+
 private func getEditorHTMLTemplate() -> String {
+    let bundleJS = loadTiptapBundle()
     return """
     <!DOCTYPE html>
     <html lang="zh-CN">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <script>
+            \(bundleJS)
+        </script>
         <script>
             window.onerror = function(message, source, lineno, colno, error) {
                 const errorDiv = document.createElement('div');
@@ -370,11 +396,36 @@ private func getEditorHTMLTemplate() -> String {
         </div>
 
         <script type="module">
-            import { Editor, mergeAttributes } from 'https://esm.sh/@tiptap/core@3';
-            import StarterKit from 'https://esm.sh/@tiptap/starter-kit@3?deps=@tiptap/core@3';
-            import { Markdown } from 'https://esm.sh/@tiptap/markdown@3?deps=@tiptap/core@3';
-            import Heading from 'https://esm.sh/@tiptap/extension-heading@3?deps=@tiptap/core@3';
-            import { TableKit } from 'https://esm.sh/@tiptap/extension-table@3?deps=@tiptap/core@3';
+            let Tiptap = window.Tiptap;
+            if (!Tiptap) {
+                console.warn("Local Tiptap bundle not found. Falling back to esm.sh CDN...");
+                try {
+                    const [core, starterKit, markdown, heading, table] = await Promise.all([
+                        import('https://esm.sh/@tiptap/core@3'),
+                        import('https://esm.sh/@tiptap/starter-kit@3?deps=@tiptap/core@3'),
+                        import('https://esm.sh/@tiptap/markdown@3?deps=@tiptap/core@3'),
+                        import('https://esm.sh/@tiptap/extension-heading@3?deps=@tiptap/core@3'),
+                        import('https://esm.sh/@tiptap/extension-table@3?deps=@tiptap/core@3')
+                    ]);
+                    Tiptap = {
+                        Editor: core.Editor,
+                        mergeAttributes: core.mergeAttributes,
+                        StarterKit: starterKit.default,
+                        Markdown: markdown.Markdown,
+                        Heading: heading.default,
+                        TableKit: table.TableKit
+                    };
+                } catch (err) {
+                    const errorDiv = document.createElement('div');
+                    errorDiv.style.color = 'red';
+                    errorDiv.style.padding = '20px';
+                    errorDiv.innerText = 'Failed to load Tiptap editor: ' + err.message;
+                    document.body.appendChild(errorDiv);
+                    throw err;
+                }
+            }
+
+            const { Editor, mergeAttributes, StarterKit, Markdown, Heading, TableKit } = Tiptap;
 
             let isUpdatingFromSwift = false;
 
