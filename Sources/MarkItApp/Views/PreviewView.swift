@@ -15,6 +15,9 @@ struct WebView: NSViewRepresentable {
         let userContentController = WKUserContentController()
         userContentController.add(context.coordinator, name: "contentDidChange")
         userContentController.add(context.coordinator, name: "editorReady")
+        userContentController.add(context.coordinator, name: "jekyllTitleDidChange")
+        userContentController.add(context.coordinator, name: "jekyllDateDidChange")
+        userContentController.add(context.coordinator, name: "jekyllTagsDidChange")
         config.userContentController = userContentController
         
         let webView = WKWebView(frame: .zero, configuration: config)
@@ -31,12 +34,16 @@ struct WebView: NSViewRepresentable {
     func updateNSView(_ webView: WKWebView, context: Context) {
         guard context.coordinator.isEditorReady else { return }
         
-        // If the URL has changed or the document text doesn't match the webview text (edited externally in source mode)
-        if document.url != context.coordinator.loadedURL || document.text != context.coordinator.lastReceivedText {
+        // If the URL has changed or the document bodyText doesn't match the webview text (edited externally in source mode)
+        if document.url != context.coordinator.loadedURL || document.bodyText != context.coordinator.lastReceivedText {
             context.coordinator.loadedURL = document.url
-            context.coordinator.lastReceivedText = document.text
-            let markdown = document.text
-            let jsString = "window.setMarkdownContent(\(markdown.jsEscaped));"
+            context.coordinator.lastReceivedText = document.bodyText
+            let markdown = document.bodyText
+            let jekyllTitle = document.jekyllTitle
+            let jekyllDate = document.jekyllDate
+            let jekyllTags = document.jekyllTags
+            let hasJekyll = !document.frontMatterText.isEmpty
+            let jsString = "window.setMarkdownContent(\(markdown.jsEscaped), \(jekyllTitle.jsEscaped), \(jekyllDate.jsEscaped), \(jekyllTags.jsEscaped), \(hasJekyll));"
             webView.evaluateJavaScript(jsString)
         }
         
@@ -65,15 +72,19 @@ struct WebView: NSViewRepresentable {
                 isEditorReady = true
                 
                 // Initial load of content and style
-                let markdown = parent.document.text
+                let markdown = parent.document.bodyText
                 let style = parent.document.previewStyle
                 let css = parent.document.loadCSS(for: style)
+                let jekyllTitle = parent.document.jekyllTitle
+                let jekyllDate = parent.document.jekyllDate
+                let jekyllTags = parent.document.jekyllTags
+                let hasJekyll = !parent.document.frontMatterText.isEmpty
                 
                 loadedURL = parent.document.url
                 loadedStyle = style
                 lastReceivedText = markdown
                 
-                let setContentJS = "window.setMarkdownContent(\(markdown.jsEscaped));"
+                let setContentJS = "window.setMarkdownContent(\(markdown.jsEscaped), \(jekyllTitle.jsEscaped), \(jekyllDate.jsEscaped), \(jekyllTags.jsEscaped), \(hasJekyll));"
                 let setStyleJS = "window.updateStyle(\(css.jsEscaped));"
                 
                 message.webView?.evaluateJavaScript(setContentJS)
@@ -91,6 +102,36 @@ struct WebView: NSViewRepresentable {
                     guard let self = self else { return }
                     // Update text in document model
                     self.parent.document.updateTextFromWebview(markdown, rawHtml: html)
+                }
+            } else if message.name == "jekyllTitleDidChange" {
+                guard let body = message.body as? [String: Any],
+                      let title = body["title"] as? String else {
+                    return
+                }
+                
+                DispatchQueue.main.async { [weak self] in
+                    guard let self = self else { return }
+                    self.parent.document.jekyllTitle = title
+                }
+            } else if message.name == "jekyllDateDidChange" {
+                guard let body = message.body as? [String: Any],
+                      let date = body["date"] as? String else {
+                    return
+                }
+                
+                DispatchQueue.main.async { [weak self] in
+                    guard let self = self else { return }
+                    self.parent.document.jekyllDate = date
+                }
+            } else if message.name == "jekyllTagsDidChange" {
+                guard let body = message.body as? [String: Any],
+                      let tags = body["tags"] as? String else {
+                    return
+                }
+                
+                DispatchQueue.main.async { [weak self] in
+                    guard let self = self else { return }
+                    self.parent.document.jekyllTags = tags
                 }
             }
         }
@@ -208,11 +249,93 @@ private func getEditorHTMLTemplate() -> String {
                 z-index: 20;
                 pointer-events: none;
             }
+            
+            #jekyll-header-card {
+                background: linear-gradient(135deg, #fdfbfb 0%, #f6f7f9 100%);
+                border: 1px solid #e2e8f0;
+                border-radius: 12px;
+                padding: 16px 20px;
+                margin-bottom: 24px;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02);
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+            }
+            .jekyll-badge {
+                display: inline-flex;
+                align-items: center;
+                background-color: #fff1f2;
+                color: #e11d48;
+                font-size: 11px;
+                font-weight: 600;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                padding: 4px 8px;
+                border-radius: 6px;
+                margin-bottom: 12px;
+            }
+            .jekyll-icon {
+                margin-right: 4px;
+            }
+            .jekyll-fields-grid {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 16px;
+            }
+            .jekyll-field {
+                display: flex;
+                flex-direction: column;
+                gap: 6px;
+            }
+            .jekyll-field.full-width {
+                grid-column: span 2;
+            }
+            .jekyll-field label {
+                font-size: 12px;
+                font-weight: 500;
+                color: #64748b;
+            }
+            .jekyll-input-field {
+                font-size: 14px;
+                font-weight: 500;
+                color: #1e293b;
+                border: 1px solid #cbd5e1;
+                border-radius: 8px;
+                padding: 8px 12px;
+                outline: none;
+                transition: border-color 0.2s, box-shadow 0.2s;
+                background-color: #ffffff;
+            }
+            .jekyll-input-field:focus {
+                border-color: #e11d48;
+                box-shadow: 0 0 0 3px rgba(225, 29, 72, 0.15);
+            }
+            #jekyll-title-input {
+                font-size: 18px;
+                font-weight: 600;
+            }
         </style>
         <style id="theme-style"></style>
     </head>
     <body>
         <div id="editor-container">
+            <div id="jekyll-header-card" style="display: none;">
+                <div class="jekyll-badge">
+                    <span class="jekyll-icon">✍️</span> Jekyll 文章配置
+                </div>
+                <div class="jekyll-fields-grid">
+                    <div class="jekyll-field full-width">
+                        <label for="jekyll-title-input">文章标题</label>
+                        <input type="text" id="jekyll-title-input" class="jekyll-input-field" placeholder="请输入博客标题..." />
+                    </div>
+                    <div class="jekyll-field">
+                        <label for="jekyll-date-input">发布日期</label>
+                        <input type="text" id="jekyll-date-input" class="jekyll-input-field" placeholder="如: 2026-07-15 15:30:00 +0800" />
+                    </div>
+                    <div class="jekyll-field">
+                        <label for="jekyll-tags-input">文章标签 (逗号分隔)</label>
+                        <input type="text" id="jekyll-tags-input" class="jekyll-input-field" placeholder="如: apple, swift, ios" />
+                    </div>
+                </div>
+            </div>
             <div id="editor"></div>
         </div>
 
@@ -349,13 +472,30 @@ private func getEditorHTMLTemplate() -> String {
                 e.preventDefault();
             });
 
-            window.setMarkdownContent = function(markdown) {
+            window.setMarkdownContent = function(markdown, jekyllTitle, jekyllDate, jekyllTags, hasJekyll) {
                 isUpdatingFromSwift = true;
                 editor.commands.setContent(markdown, { contentType: 'markdown' });
                 isUpdatingFromSwift = false;
                 
                 // Focus on editor
                 editor.commands.focus();
+                
+                // Handle Jekyll header card visibility and value
+                const card = document.getElementById('jekyll-header-card');
+                const titleInput = document.getElementById('jekyll-title-input');
+                const dateInput = document.getElementById('jekyll-date-input');
+                const tagsInput = document.getElementById('jekyll-tags-input');
+                if (hasJekyll) {
+                    card.style.display = 'block';
+                    titleInput.value = jekyllTitle || '';
+                    dateInput.value = jekyllDate || '';
+                    tagsInput.value = jekyllTags || '';
+                } else {
+                    card.style.display = 'none';
+                    titleInput.value = '';
+                    dateInput.value = '';
+                    tagsInput.value = '';
+                }
                 
                 const html = editor.getHTML();
                 window.webkit.messageHandlers.contentDidChange.postMessage({
@@ -370,6 +510,25 @@ private func getEditorHTMLTemplate() -> String {
                     styleEl.textContent = cssText;
                 }
             };
+
+            // Set up Jekyll title, date, and tags input listeners
+            document.getElementById('jekyll-title-input').addEventListener('input', function(e) {
+                window.webkit.messageHandlers.jekyllTitleDidChange.postMessage({
+                    title: e.target.value
+                });
+            });
+            
+            document.getElementById('jekyll-date-input').addEventListener('input', function(e) {
+                window.webkit.messageHandlers.jekyllDateDidChange.postMessage({
+                    date: e.target.value
+                });
+            });
+            
+            document.getElementById('jekyll-tags-input').addEventListener('input', function(e) {
+                window.webkit.messageHandlers.jekyllTagsDidChange.postMessage({
+                    tags: e.target.value
+                });
+            });
 
             // Notify Swift that the editor is ready
             window.webkit.messageHandlers.editorReady.postMessage({});
