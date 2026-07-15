@@ -53,7 +53,7 @@ struct SharedEditorToolbar: View {
                 Button {
                     state.toggleEditMode()
                 } label: {
-                    Image(systemName: state.editMode == .wysiwyg ? "curlybraces" : "doc.richtext")
+                    Image(systemName: state.editMode == .wysiwyg ? "doc.richtext" : "pencil")
                         .font(.system(size: 16, weight: .medium))
                         .frame(width: Self.toolbarButtonSize, height: Self.toolbarButtonSize)
                 }
