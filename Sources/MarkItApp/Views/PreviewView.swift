@@ -399,19 +399,11 @@ struct PreviewView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if state.document.url == nil {
-                PlaceholderView(
-                    title: "未打开文件",
-                    systemImage: "doc.richtext",
-                    message: "在左侧新建或打开一个 Markdown 文件开始编辑"
-                )
+            if state.editMode == .wysiwyg {
+                WebView(document: state.document)
+                    .background(.white)
             } else {
-                if state.editMode == .wysiwyg {
-                    WebView(document: state.document)
-                        .background(.white)
-                } else {
-                    SourceEditorView(document: state.document)
-                }
+                SourceEditorView(document: state.document)
             }
         }
         .frame(idealWidth: 500)
