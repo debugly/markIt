@@ -233,12 +233,13 @@ private func getEditorHTMLTemplate() -> String {
                 }
             }
             html, body {
-                margin: 0;
-                padding: 0;
-                width: 100%;
-                min-height: 100%;
+                margin: 0 !important;
+                padding: 0 !important;
+                width: 100% !important;
+                min-height: 100% !important;
                 background-color: transparent;
                 color: var(--text-color);
+                overflow-x: hidden;
             }
             #editor-container {
                 width: 100%;
