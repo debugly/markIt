@@ -29,3 +29,5 @@ schemes:
         Markit: all
     run:
       config: Debug
+      environmentVariables:
+        OS_ACTIVITY_MODE: disable
