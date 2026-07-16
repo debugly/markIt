@@ -62,7 +62,7 @@ private struct WindowButtonAlignmentConfigurator: NSViewRepresentable {
     }
 
     private func alignWindowButtons(in window: NSWindow?) {
-        guard let window else { return }
+        guard let window = window else { return }
 
         let buttons: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
         for buttonType in buttons {

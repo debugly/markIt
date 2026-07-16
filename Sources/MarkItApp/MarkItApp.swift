@@ -5,7 +5,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var onOpenFile: ((URL) -> Void)?
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard let appState else { return .terminateNow }
+        guard let appState = appState else { return .terminateNow }
         return appState.document.confirmCloseIfNeeded() ? .terminateNow : .terminateCancel
     }
 
@@ -26,7 +26,7 @@ struct MarkItApp: App {
         _state = StateObject(wrappedValue: state)
         appDelegate.appState = state
         appDelegate.onOpenFile = { [weak state] url in
-            guard let state else { return }
+            guard let state = state else { return }
             print("[MarkIt Log] appDelegate.onOpenFile triggered for URL: \(url.path)")
             state.hasOpenedFileOnLaunch = true
             DispatchQueue.main.async {
@@ -136,6 +136,6 @@ struct MarkItApp: App {
                 .keyboardShortcut("i", modifiers: [.command, .option])
             }
         }
-        .windowStyle(.hiddenTitleBar)
+        .windowStyle(HiddenTitleBarWindowStyle())
     }
 }

@@ -61,7 +61,7 @@ struct SidebarView: View {
                 } label: {
                     Label("打开文件夹", systemImage: "folder.badge.plus")
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(PlainButtonStyle())
                 .focusable(false)
 
                 Spacer()
@@ -73,7 +73,7 @@ struct SidebarView: View {
                 } label: {
                     Image(systemName: "gearshape")
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(PlainButtonStyle())
                 .focusable(false)
                 .help("设置")
 
@@ -82,7 +82,7 @@ struct SidebarView: View {
                 } label: {
                     Image(systemName: "paintpalette")
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(PlainButtonStyle())
                 .focusable(false)
                 .help("样式")
                 .popover(isPresented: $showingStylePicker) {
@@ -315,11 +315,15 @@ private struct SidebarTreeNodeView: View {
             Button("创建副本") { openPrompt(.duplicate(target: node.url)) }
             Divider()
             Button("刷新") { state.refresh() }
+            #if compiler(>=5.5)
             if #available(macOS 12.0, *) {
                 Button("删除", role: .destructive) { deleteTarget = node.url }
             } else {
                 Button("删除") { deleteTarget = node.url }
             }
+            #else
+            Button("删除") { deleteTarget = node.url }
+            #endif
             Button("在 Finder 中显示") { state.revealInFinder(node.url) }
         }
     }

@@ -31,7 +31,7 @@ struct SharedEditorToolbar: View {
                     .font(.system(size: 16, weight: .medium))
                     .frame(width: Self.toolbarButtonSize, height: Self.toolbarButtonSize)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PlainButtonStyle())
             .focusable(false)
             .help("显示/隐藏目录")
 
@@ -54,7 +54,7 @@ struct SharedEditorToolbar: View {
                         .font(.system(size: 16, weight: .medium))
                         .frame(width: Self.toolbarButtonSize, height: Self.toolbarButtonSize)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(PlainButtonStyle())
                 .focusable(false)
                 .help(state.editMode == .wysiwyg ? "源码编辑" : "所见即所得编辑")
                 .padding(.trailing, 4)
@@ -82,7 +82,8 @@ private struct ToolbarPathControl: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSView {
         let container = NSView()
-        container.clipsToBounds = true
+        container.wantsLayer = true
+        container.layer?.masksToBounds = true
 
         let control = RightClickPathControl()
         control.pathStyle = .popUp
@@ -119,7 +120,7 @@ private struct ToolbarPathControl: NSViewRepresentable {
 
         @objc func revealClickedPathItem(_ sender: NSPathControl) {
             let url = sender.clickedPathItem?.url ?? sender.url
-            guard let url else { return }
+            guard let url = url else { return }
             NSWorkspace.shared.activateFileViewerSelecting([url])
         }
     }

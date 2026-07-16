@@ -13,7 +13,9 @@ struct WebView: NSViewRepresentable {
         let config = WKWebViewConfiguration()
         
         // On older macOS versions (pre-13.3), developer extras MUST be enabled on preferences before webView initialization
-        if #unavailable(macOS 13.3) {
+        if #available(macOS 13.3, *) {
+            // Already handled via isInspectable on macOS 13.3+
+        } else {
             config.preferences.setValue(isInspectEnabled, forKey: "developerExtrasEnabled")
         }
         
@@ -58,13 +60,12 @@ struct WebView: NSViewRepresentable {
         webView.setValue(false, forKey: "drawsBackground") // Transparent background
         webView.navigationDelegate = context.coordinator
         
-        // Load the editor HTML page
         let htmlTemplate = getEditorHTMLTemplate()
         let baseURL: URL?
         if #available(macOS 13.0, *) {
             baseURL = Bundle.main.bundleURL
         } else {
-            baseURL = nil
+            baseURL = URL(string: "https://markit.local/")
         }
         webView.loadHTMLString(htmlTemplate, baseURL: baseURL)
         
@@ -102,8 +103,15 @@ struct WebView: NSViewRepresentable {
     }
     
     private func setInspectEnabled(_ enabled: Bool, on webView: WKWebView) {
+        #if compiler(>=5.8)
         if #available(macOS 13.3, *) {
             webView.isInspectable = enabled
+            return
+        }
+        #endif
+        
+        if webView.responds(to: Selector(("setInspectable:"))) {
+            webView.setValue(enabled, forKey: "inspectable")
         } else {
             webView.configuration.preferences.setValue(enabled, forKey: "developerExtrasEnabled")
         }
@@ -199,6 +207,24 @@ struct WebView: NSViewRepresentable {
                    let source = errorDict["source"] as? String {
                     let stack = errorDict["error"] as? String ?? ""
                     print("🔴 [Web Error] \(msg) at \(source):\(line):\(col)\nStack: \(stack)")
+                    
+                    // Show native macOS alert dialog
+                    DispatchQueue.main.async {
+                        let alert = NSAlert()
+                        alert.messageText = "网页渲染/脚本错误 (Web Error)"
+                        alert.informativeText = """
+                        错误信息: \(msg)
+                        
+                        文件: \(source)
+                        行: \(line), 列: \(col)
+                        
+                        堆栈信息 (Stack Trace):
+                        \(stack)
+                        """
+                        alert.alertStyle = .warning
+                        alert.addButton(withTitle: "确定 (OK)")
+                        alert.runModal()
+                    }
                 }
             }
         }

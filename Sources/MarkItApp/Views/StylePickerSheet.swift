@@ -28,7 +28,7 @@ struct StylePickerSheet: View {
                     .frame(height: 34)
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(PlainButtonStyle())
             }
         }
         .frame(width: 260, height: 350)

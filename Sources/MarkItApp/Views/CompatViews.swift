@@ -2,27 +2,30 @@ import SwiftUI
 
 struct CompatMaterialView: View {
     var body: some View {
+        #if compiler(>=5.5)
         if #available(macOS 12.0, *) {
-            Color.clear.background(.regularMaterial)
-        } else {
-            Color.clear
+            return AnyView(Color.clear.background(Material.regularMaterial))
         }
+        #endif
+        return AnyView(Color.clear)
     }
 }
 
 struct CompatBarView: View {
     var body: some View {
+        #if compiler(>=5.5)
         if #available(macOS 12.0, *) {
-            Color.clear.background(.bar)
-        } else {
-            Color(NSColor.windowBackgroundColor)
+            return AnyView(Color.clear.background(Material.bar))
         }
+        #endif
+        return AnyView(Color(NSColor.windowBackgroundColor))
     }
 }
 
 extension View {
     @ViewBuilder
     func showUnsavedAlertCompat(isPresented: Binding<Bool>, onDecision: @escaping (UnsavedDecision) -> Void) -> some View {
+        #if compiler(>=5.5)
         if #available(macOS 12.0, *) {
             self.alert("是否保存未命名的文件？", isPresented: isPresented) {
                 Button("保存") { onDecision(.save) }
@@ -36,10 +39,16 @@ extension View {
                 AlertHelper(isPresented: isPresented, onDecision: onDecision)
             )
         }
+        #else
+        self.background(
+            AlertHelper(isPresented: isPresented, onDecision: onDecision)
+        )
+        #endif
     }
 
     @ViewBuilder
     func deleteConfirmationAlert(deleteTarget: Binding<URL?>, onConfirm: @escaping (URL) -> Void) -> some View {
+        #if compiler(>=5.5)
         if #available(macOS 12.0, *) {
             self.alert("确认删除该文件？", isPresented: Binding(
                 get: { deleteTarget.wrappedValue != nil },
@@ -77,6 +86,26 @@ extension View {
                 )
             }
         }
+        #else
+        self.alert(isPresented: Binding(
+            get: { deleteTarget.wrappedValue != nil },
+            set: { if !$0 { deleteTarget.wrappedValue = nil } }
+        )) {
+            Alert(
+                title: Text("确认删除该文件？"),
+                message: Text(deleteTarget.wrappedValue?.lastPathComponent ?? ""),
+                primaryButton: .destructive(Text("删除")) {
+                    if let target = deleteTarget.wrappedValue {
+                        onConfirm(target)
+                    }
+                    deleteTarget.wrappedValue = nil
+                },
+                secondaryButton: .cancel {
+                    deleteTarget.wrappedValue = nil
+                }
+            )
+        }
+        #endif
     }
 }
 

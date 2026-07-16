@@ -113,7 +113,12 @@ final class AppState: ObservableObject {
     }
 
     private func restoreWebViewInspectEnabled() {
-        isWebViewInspectEnabled = UserDefaults.standard.bool(forKey: inspectKey)
+        if UserDefaults.standard.object(forKey: inspectKey) == nil {
+            isWebViewInspectEnabled = true
+            UserDefaults.standard.set(true, forKey: inspectKey)
+        } else {
+            isWebViewInspectEnabled = UserDefaults.standard.bool(forKey: inspectKey)
+        }
     }
 
     func setPreviewStyle(_ style: String) {
@@ -159,7 +164,7 @@ final class AppState: ObservableObject {
 
         for provider in matchingProviders {
             provider.loadDataRepresentation(forTypeIdentifier: fileURLType) { [weak self] data, _ in
-                guard let self, let data else { return }
+                guard let self = self, let data = data else { return }
                 guard let url = URL(dataRepresentation: data, relativeTo: nil) else { return }
 
                 DispatchQueue.main.async {
@@ -311,7 +316,7 @@ final class AppState: ObservableObject {
 
         for provider in matchingProviders {
             provider.loadDataRepresentation(forTypeIdentifier: fileURLType) { [weak self] data, _ in
-                guard let self, let data else { return }
+                guard let self = self, let data = data else { return }
                 guard let url = URL(dataRepresentation: data, relativeTo: nil) else { return }
 
                 DispatchQueue.main.async {
@@ -365,10 +370,10 @@ final class AppState: ObservableObject {
         case .save:
             DispatchQueue.main.async { [weak self] in
                 self?.beginSavePanel(defaultName: "未命名.md") { [weak self] url in
-                    guard let self else { return }
-                    if let url, self.document.saveNow(to: url) {
+                    guard let self = self else { return }
+                    if let url = url, self.document.saveNow(to: url) {
                         self.document.updateURL(url)
-                        if let targetURL {
+                        if let targetURL = targetURL {
                             self.document.open(url: targetURL)
                             self.updateLastSelectionIfPossible()
                         }
@@ -379,7 +384,7 @@ final class AppState: ObservableObject {
             }
         case .discard:
             document.clear()
-            if let targetURL {
+            if let targetURL = targetURL {
                 document.open(url: targetURL)
                 updateLastSelectionIfPossible()
             }
@@ -532,7 +537,7 @@ final class AppState: ObservableObject {
             rebuildTree()
         }
 
-        if let documentURL {
+        if let documentURL = documentURL {
             document.updateURL(documentURL)
         }
 
@@ -548,7 +553,7 @@ final class AppState: ObservableObject {
     }
 
     private func updatedURLAfterMove(for url: URL?, from sourceRoot: URL, to targetRoot: URL) -> URL? {
-        guard let url else { return nil }
+        guard let url = url else { return nil }
         guard let relativePath = relativePath(of: url, from: sourceRoot) else { return nil }
         guard relativePath.isEmpty == false else { return targetRoot }
         return relativePath.reduce(targetRoot) { partialResult, component in

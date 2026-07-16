@@ -20,7 +20,7 @@ struct NamePromptSheet: View {
                 .foregroundColor(.secondary)
 
             TextField("名称", text: $text)
-                .textFieldStyle(.roundedBorder)
+                .textFieldStyle(RoundedBorderTextFieldStyle())
 
             HStack {
                 Spacer()

@@ -202,7 +202,7 @@ final class DocumentModel: ObservableObject {
         }
     }
 
-    private var saveTask: Task<Void, Never>?
+    private var saveWorkItem: DispatchWorkItem?
     private var isSettingInitialText = false
 
     func loadCSS(for style: String) -> String {
@@ -290,7 +290,7 @@ final class DocumentModel: ObservableObject {
     func open(url: URL) {
         if self.url == url { return }
 
-        saveTask?.cancel()
+        saveWorkItem?.cancel()
         self.url = url
         isSettingInitialText = true
 
@@ -320,7 +320,7 @@ final class DocumentModel: ObservableObject {
     }
 
     func saveIfDirty() -> Bool {
-        guard let url else { return false }
+        guard let url = url else { return false }
         if isDirty {
             return saveNow(to: url)
         }
@@ -328,7 +328,7 @@ final class DocumentModel: ObservableObject {
     }
 
     func updateURL(_ newURL: URL) {
-        saveTask?.cancel()
+        saveWorkItem?.cancel()
         url = newURL
         if isDirty {
             scheduleSave()
@@ -336,7 +336,7 @@ final class DocumentModel: ObservableObject {
     }
 
     func clear() {
-        saveTask?.cancel()
+        saveWorkItem?.cancel()
         url = nil
         text = ""
         bodyText = ""
@@ -368,7 +368,7 @@ final class DocumentModel: ObservableObject {
 
     @discardableResult
     func saveNow(to url: URL) -> Bool {
-        saveTask?.cancel()
+        saveWorkItem?.cancel()
         do {
             try text.write(to: url, atomically: true, encoding: .utf8)
             isDirty = false
@@ -408,14 +408,17 @@ final class DocumentModel: ObservableObject {
 
     private func scheduleSave() {
         guard isSettingInitialText == false else { return }
-        guard let url else { return }
+        guard let url = url else { return }
 
-        saveTask?.cancel()
-        saveTask = Task { [text] in
-            try? await Task.sleep(nanoseconds: 350_000_000)
-            if Task.isCancelled { return }
-            try? text.write(to: url, atomically: true, encoding: .utf8)
+        saveWorkItem?.cancel()
+        
+        let currentText = text
+        let workItem = DispatchWorkItem { [weak self] in
+            try? currentText.write(to: url, atomically: true, encoding: .utf8)
+            self?.isDirty = false
         }
+        saveWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: workItem)
     }
 }
 
