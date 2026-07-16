@@ -24,11 +24,12 @@ cat << 'EOF' > package.json
 EOF
 
 echo "Installing Tiptap and Esbuild..."
-npm install @tiptap/core @tiptap/starter-kit @tiptap/markdown @tiptap/extension-heading @tiptap/extension-table
-npm install -D esbuild
+npm install --legacy-peer-deps @tiptap/core @tiptap/starter-kit @tiptap/markdown @tiptap/extension-heading @tiptap/extension-table core-js
+npm install --legacy-peer-deps -D esbuild
 
 echo "Writing entry file..."
 cat << 'EOF' > entry.js
+import 'core-js/stable';
 import { Editor, mergeAttributes } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import { Markdown } from '@tiptap/markdown';
@@ -46,7 +47,13 @@ window.Tiptap = {
 EOF
 
 echo "Bundling and minifying with esbuild..."
-npx esbuild entry.js --bundle --minify --format=iife --outfile="${OUT_DIR}/tiptap-bundle.js"
+npx esbuild entry.js --bundle --minify --format=iife --target=safari14 --supported:destructuring=true --outfile="${OUT_DIR}/tiptap-bundle.js"
+
+echo "Sanitizing bundle for Safari 14 / macOS 11 compatibility..."
+python3 "${SCRIPT_DIR}/clean_bundle.py" "${OUT_DIR}/tiptap-bundle.js"
+
+echo "Verifying JavaScript bundle syntax..."
+node -c "${OUT_DIR}/tiptap-bundle.js"
 
 echo "Cleaning up temporary files..."
 cd "${SCRIPT_DIR}"
