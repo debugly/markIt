@@ -41,6 +41,13 @@ final class AppState: ObservableObject {
         didSet { document.previewStyle = previewStyle }
     }
 
+    private let inspectKey = "MarkIt.IsWebViewInspectEnabled"
+    @Published var isWebViewInspectEnabled: Bool = false {
+        didSet {
+            UserDefaults.standard.set(isWebViewInspectEnabled, forKey: inspectKey)
+        }
+    }
+
     let document = DocumentModel()
     private let stylesKey = "MarkIt.PreviewStyle"
     private let fileManager = FileManager.default
@@ -61,6 +68,7 @@ final class AppState: ObservableObject {
         restoreBookmarks()
         restorePreviewStyle()
         restoreRecentFiles()
+        restoreWebViewInspectEnabled()
         rebuildTree()
         setupDocumentObserver()
     }
@@ -102,6 +110,10 @@ final class AppState: ObservableObject {
 
     private func restorePreviewStyle() {
         previewStyle = UserDefaults.standard.string(forKey: stylesKey) ?? "GitHub.css"
+    }
+
+    private func restoreWebViewInspectEnabled() {
+        isWebViewInspectEnabled = UserDefaults.standard.bool(forKey: inspectKey)
     }
 
     func setPreviewStyle(_ style: String) {

@@ -3,6 +3,7 @@ import WebKit
 
 struct WebView: NSViewRepresentable {
     @ObservedObject var document: DocumentModel
+    var isInspectEnabled: Bool
     
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -11,6 +12,11 @@ struct WebView: NSViewRepresentable {
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         
+        // On older macOS versions (pre-13.3), developer extras MUST be enabled on preferences before webView initialization
+        if #unavailable(macOS 13.3) {
+            config.preferences.setValue(isInspectEnabled, forKey: "developerExtrasEnabled")
+        }
+        
         // Add script message handler
         let userContentController = WKUserContentController()
         userContentController.add(context.coordinator, name: "contentDidChange")
@@ -18,20 +24,58 @@ struct WebView: NSViewRepresentable {
         userContentController.add(context.coordinator, name: "jekyllTitleDidChange")
         userContentController.add(context.coordinator, name: "jekyllDateDidChange")
         userContentController.add(context.coordinator, name: "jekyllTagsDidChange")
+        
+        // Inject JS log/error forwarding scripts to print debugging logs directly to Xcode / build.sh console
+        let consoleBridgeScript = WKUserScript(
+            source: """
+            window.onerror = function(message, source, lineno, colno, error) {
+                window.webkit.messageHandlers.jsError.postMessage({
+                    message: message,
+                    source: source,
+                    lineno: lineno,
+                    colno: colno,
+                    error: error ? error.stack : ""
+                });
+                return false;
+            };
+            console.log = function() {
+                window.webkit.messageHandlers.jsLog.postMessage(Array.from(arguments).join(" "));
+            };
+            console.error = function() {
+                window.webkit.messageHandlers.jsLog.postMessage("ERROR: " + Array.from(arguments).join(" "));
+            };
+            """,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
+        )
+        userContentController.addUserScript(consoleBridgeScript)
+        userContentController.add(context.coordinator, name: "jsLog")
+        userContentController.add(context.coordinator, name: "jsError")
+        
         config.userContentController = userContentController
         
-        let webView = WKWebView(frame: .zero, configuration: config)
+        let webView = InspectableWebView(frame: .zero, configuration: config)
         webView.setValue(false, forKey: "drawsBackground") // Transparent background
         webView.navigationDelegate = context.coordinator
         
         // Load the editor HTML page
         let htmlTemplate = getEditorHTMLTemplate()
-        webView.loadHTMLString(htmlTemplate, baseURL: nil)
+        let baseURL: URL?
+        if #available(macOS 13.0, *) {
+            baseURL = Bundle.main.bundleURL
+        } else {
+            baseURL = nil
+        }
+        webView.loadHTMLString(htmlTemplate, baseURL: baseURL)
+        
+        setInspectEnabled(isInspectEnabled, on: webView)
         
         return webView
     }
     
     func updateNSView(_ webView: WKWebView, context: Context) {
+        setInspectEnabled(isInspectEnabled, on: webView)
+        
         guard context.coordinator.isEditorReady else { return }
         
         // If the style has changed, update the CSS
@@ -54,6 +98,14 @@ struct WebView: NSViewRepresentable {
             let hasJekyll = !document.frontMatterText.isEmpty
             let jsString = "window.setMarkdownContent(\(markdown.jsEscaped), \(jekyllTitle.jsEscaped), \(jekyllDate.jsEscaped), \(jekyllTags.jsEscaped), \(hasJekyll));"
             webView.evaluateJavaScript(jsString)
+        }
+    }
+    
+    private func setInspectEnabled(_ enabled: Bool, on webView: WKWebView) {
+        if #available(macOS 13.3, *) {
+            webView.isInspectable = enabled
+        } else {
+            webView.configuration.preferences.setValue(enabled, forKey: "developerExtrasEnabled")
         }
     }
     
@@ -134,6 +186,19 @@ struct WebView: NSViewRepresentable {
                 DispatchQueue.main.async { [weak self] in
                     guard let self = self else { return }
                     self.parent.document.jekyllTags = tags
+                }
+            } else if message.name == "jsLog" {
+                if let log = message.body as? String {
+                    print("🌐 [Web Log]: \(log)")
+                }
+            } else if message.name == "jsError" {
+                if let errorDict = message.body as? [String: Any],
+                   let msg = errorDict["message"] as? String,
+                   let line = errorDict["lineno"] as? Int,
+                   let col = errorDict["colno"] as? Int,
+                   let source = errorDict["source"] as? String {
+                    let stack = errorDict["error"] as? String ?? ""
+                    print("🔴 [Web Error] \(msg) at \(source):\(line):\(col)\nStack: \(stack)")
                 }
             }
         }
@@ -397,9 +462,6 @@ private func getEditorHTMLTemplate() -> String {
             }
 
             const { Editor, mergeAttributes, StarterKit, Markdown, Heading, TableKit } = Tiptap;
-
-            // Disable native context menu to prevent right-click reload and white screens
-            document.addEventListener('contextmenu', event => event.preventDefault());
 
             let isUpdatingFromSwift = false;
 
@@ -938,10 +1000,29 @@ struct PreviewView: View {
     var body: some View {
         VStack(spacing: 0) {
             if state.editMode == .wysiwyg {
-                WebView(document: state.document)
+                WebView(document: state.document, isInspectEnabled: state.isWebViewInspectEnabled)
                     .background(Color(.textBackgroundColor))
             } else {
                 SourceEditorView(document: state.document)
+            }
+        }
+    }
+}
+
+class InspectableWebView: WKWebView {
+    override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
+        super.willOpenMenu(menu, with: event)
+        
+        for item in menu.items {
+            if let action = item.action {
+                let actionStr = NSStringFromSelector(action)
+                if actionStr.contains("reload") || actionStr.contains("Reload") {
+                    menu.removeItem(item)
+                    continue
+                }
+            }
+            if item.title.contains("Reload") || item.title.contains("重新加载") {
+                menu.removeItem(item)
             }
         }
     }

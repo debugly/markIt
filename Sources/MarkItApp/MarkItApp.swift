@@ -127,6 +127,13 @@ struct MarkItApp: App {
                     Label(state.editMode == .wysiwyg ? "切换到源码编辑" : "切换到所见即所得", systemImage: "curlybraces")
                 }
                 .keyboardShortcut("e", modifiers: [.command, .option])
+
+                Button {
+                    state.isWebViewInspectEnabled.toggle()
+                } label: {
+                    Label(state.isWebViewInspectEnabled ? "禁用 Webview 审查" : "启用 Webview 审查", systemImage: "terminal")
+                }
+                .keyboardShortcut("i", modifiers: [.command, .option])
             }
         }
         .windowStyle(.hiddenTitleBar)
