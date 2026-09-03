@@ -81,6 +81,12 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     override func viewDidLoad() {
         super.viewDidLoad()
         bindState()
+        reloadDataAndExpand()
+    }
+
+    override func viewWillAppear() {
+        super.viewWillAppear()
+        reloadDataAndExpand()
     }
 
     private func setupOutlineView() {
@@ -211,6 +217,8 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
 
     private func reloadDataAndExpand() {
         outlineView.reloadData()
+        outlineView.expandItem(recentGroupIdentifier, expandChildren: true)
+        outlineView.expandItem(folderGroupIdentifier, expandChildren: true)
         expandAllFolders(items: state.tree)
         syncSelection(state.selection)
     }
