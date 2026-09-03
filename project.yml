@@ -9,9 +9,13 @@ targets:
   Markit:
     type: application
     platform: macOS
+    deploymentTarget: "11.0"
     sources:
       - path: Sources/MarkItApp
+        name: Sources
       - path: Resources
+        excludes:
+          - Info.plist
     settings:
       base:
         PRODUCT_NAME: Markit
@@ -19,10 +23,15 @@ targets:
         MARKETING_VERSION: "0.3.0"
         CURRENT_PROJECT_VERSION: "0716"
         INFOPLIST_FILE: Resources/Info.plist
+        GENERATE_INFOPLIST_FILE: "NO"
         SWIFT_VERSION: "5.9"
+        MACOSX_DEPLOYMENT_TARGET: "11.0"
+        COMBINE_HIDPI_IMAGES: "YES"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOLS: "NO"
         ASSETCATALOG_COMPILER_GENERATE_OBJC_ASSET_SYMBOLS: "NO"
+        ENABLE_HARDENED_RUNTIME: "YES"
+        CODE_SIGN_STYLE: Automatic
 
 schemes:
   Markit:
@@ -31,5 +40,7 @@ schemes:
         Markit: all
     run:
       config: Debug
-      environmentVariables:
-        OS_ACTIVITY_MODE: disable
+    profile:
+      config: Release
+    archive:
+      config: Release

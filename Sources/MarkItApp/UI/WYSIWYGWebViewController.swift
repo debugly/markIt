@@ -1,65 +1,102 @@
-import SwiftUI
-import WebKit
+//
+//  WYSIWYGWebViewController.swift
+//  Markit
+//
+//  Created by AppKit Migration on 2026/9/3.
+//
 
-struct WebView: NSViewRepresentable {
-    @ObservedObject var document: DocumentModel
-    var isInspectEnabled: Bool
-    
-    func makeCoordinator() -> Coordinator {
-        Coordinator(self)
+import AppKit
+import WebKit
+import Combine
+
+final class WYSIWYGWebViewController: NSViewController, WKNavigationDelegate, WKScriptMessageHandler {
+    private let document: DocumentModel
+    private let state: AppState
+    private var cancellables = Set<AnyCancellable>()
+
+    private var webView: WKWebView!
+    private(set) var isEditorReady = false
+    private var loadedURL: URL?
+    private var loadedStyle: String?
+    private var lastReceivedText: String = ""
+
+    init(document: DocumentModel, state: AppState) {
+        self.document = document
+        self.state = state
+        super.init(nibName: nil, bundle: nil)
     }
-    
-    func makeNSView(context: Context) -> WKWebView {
-        let config = WKWebViewConfiguration()
-        
-        // On older macOS versions (pre-13.3), developer extras MUST be enabled on preferences before webView initialization
-        if #available(macOS 13.3, *) {
-            // Already handled via isInspectable on macOS 13.3+
-        } else {
-            config.preferences.setValue(isInspectEnabled, forKey: "developerExtrasEnabled")
-        }
-        
-        // Add script message handler
-        let userContentController = WKUserContentController()
-        userContentController.add(context.coordinator, name: "contentDidChange")
-        userContentController.add(context.coordinator, name: "editorReady")
-        userContentController.add(context.coordinator, name: "jekyllTitleDidChange")
-        userContentController.add(context.coordinator, name: "jekyllDateDidChange")
-        userContentController.add(context.coordinator, name: "jekyllTagsDidChange")
-        
-        // Inject JS log/error forwarding scripts to print debugging logs directly to Xcode / build.sh console
-        let consoleBridgeScript = WKUserScript(
-            source: """
-            window.onerror = function(message, source, lineno, colno, error) {
-                window.webkit.messageHandlers.jsError.postMessage({
-                    message: message,
-                    source: source,
-                    lineno: lineno,
-                    colno: colno,
-                    error: error ? error.stack : ""
-                });
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func loadView() {
+        let contentController = WKUserContentController()
+
+        // Inject console logging and global error handlers
+        let consoleOverrideJS = """
+        (function() {
+            var oldLog = console.log;
+            console.log = function() {
+                var args = Array.prototype.slice.call(arguments);
+                try {
+                    window.webkit.messageHandlers.jsLog.postMessage(args.join(' '));
+                } catch(e) {}
+                oldLog.apply(console, arguments);
+            };
+            window.onerror = function(msg, url, lineNo, columnNo, error) {
+                try {
+                    window.webkit.messageHandlers.jsError.postMessage({
+                        message: msg,
+                        source: url,
+                        lineno: lineNo,
+                        colno: columnNo,
+                        error: error ? error.stack : ''
+                    });
+                } catch(e) {}
                 return false;
             };
-            console.log = function() {
-                window.webkit.messageHandlers.jsLog.postMessage(Array.from(arguments).join(" "));
-            };
-            console.error = function() {
-                window.webkit.messageHandlers.jsLog.postMessage("ERROR: " + Array.from(arguments).join(" "));
-            };
-            """,
-            injectionTime: .atDocumentStart,
-            forMainFrameOnly: true
-        )
-        userContentController.addUserScript(consoleBridgeScript)
-        userContentController.add(context.coordinator, name: "jsLog")
-        userContentController.add(context.coordinator, name: "jsError")
-        
-        config.userContentController = userContentController
-        
-        let webView = InspectableWebView(frame: .zero, configuration: config)
-        webView.setValue(false, forKey: "drawsBackground") // Transparent background
-        webView.navigationDelegate = context.coordinator
-        
+        })();
+        """
+        let userScript = WKUserScript(source: consoleOverrideJS, injectionTime: .atDocumentStart, forMainFrameOnly: false)
+        contentController.addUserScript(userScript)
+
+        contentController.add(self, name: "editorReady")
+        contentController.add(self, name: "contentDidChange")
+        contentController.add(self, name: "jekyllTitleDidChange")
+        contentController.add(self, name: "jekyllDateDidChange")
+        contentController.add(self, name: "jekyllTagsDidChange")
+        contentController.add(self, name: "jsLog")
+        contentController.add(self, name: "jsError")
+
+        let config = WKWebViewConfiguration()
+        config.userContentController = contentController
+
+        webView = InspectableWKWebView(frame: .zero, configuration: config)
+        webView.navigationDelegate = self
+        webView.setValue(false, forKey: "drawsBackground")
+        webView.translatesAutoresizingMaskIntoConstraints = false
+
+        updateInspectableState()
+
+        self.view = webView
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        loadHTML()
+        bindModel()
+    }
+
+    private func updateInspectableState() {
+        #if compiler(>=5.8)
+        if #available(macOS 13.3, *) {
+            webView.isInspectable = state.isWebViewInspectEnabled
+        }
+        #endif
+    }
+
+    private func loadHTML() {
         let htmlTemplate = getEditorHTMLTemplate()
         let baseURL: URL?
         if #available(macOS 13.0, *) {
@@ -68,183 +105,177 @@ struct WebView: NSViewRepresentable {
             baseURL = URL(string: "https://markit.local/")
         }
         webView.loadHTMLString(htmlTemplate, baseURL: baseURL)
-        
-        setInspectEnabled(isInspectEnabled, on: webView)
-        
-        return webView
     }
-    
-    func updateNSView(_ webView: WKWebView, context: Context) {
-        setInspectEnabled(isInspectEnabled, on: webView)
-        
-        guard context.coordinator.isEditorReady else { return }
-        
-        // If the style has changed, update the CSS
-        if document.previewStyle != context.coordinator.loadedStyle {
-            context.coordinator.loadedStyle = document.previewStyle
-            let css = document.loadCSS(for: document.previewStyle)
-            let jsString = "window.updateStyle(\(css.jsEscaped));"
-            webView.evaluateJavaScript(jsString)
-        }
-        
-        // If the active document URL has changed, force reload the markdown content in the WebView
-        if document.url != context.coordinator.loadedURL {
-            context.coordinator.loadedURL = document.url
-            context.coordinator.lastReceivedText = document.bodyText
-            
-            let markdown = document.bodyText
+
+    private func bindModel() {
+        state.$isWebViewInspectEnabled
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.updateInspectableState() }
+            .store(in: &cancellables)
+
+        document.$previewStyle
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] newStyle in self?.updateStyleIfNeeded(newStyle) }
+            .store(in: &cancellables)
+
+        document.$url
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] newURL in self?.handleURLChange(newURL) }
+            .store(in: &cancellables)
+    }
+
+    func syncContentFromDocument(forceReload: Bool = false) {
+        guard isEditorReady else { return }
+
+        let markdown = document.bodyText
+        if forceReload || document.url != loadedURL || markdown != lastReceivedText {
+            loadedURL = document.url
+            lastReceivedText = markdown
+
             let jekyllTitle = document.jekyllTitle
             let jekyllDate = document.jekyllDate
             let jekyllTags = document.jekyllTags
             let hasJekyll = !document.frontMatterText.isEmpty
+
             let jsString = "window.setMarkdownContent(\(markdown.jsEscaped), \(jekyllTitle.jsEscaped), \(jekyllDate.jsEscaped), \(jekyllTags.jsEscaped), \(hasJekyll));"
             webView.evaluateJavaScript(jsString)
         }
     }
-    
-    private func setInspectEnabled(_ enabled: Bool, on webView: WKWebView) {
-        #if compiler(>=5.8)
-        if #available(macOS 13.3, *) {
-            webView.isInspectable = enabled
-            return
-        }
-        #endif
-        
-        if webView.responds(to: Selector(("setInspectable:"))) {
-            webView.setValue(enabled, forKey: "inspectable")
-        } else {
-            webView.configuration.preferences.setValue(enabled, forKey: "developerExtrasEnabled")
+
+    private func handleURLChange(_ newURL: URL?) {
+        guard isEditorReady else { return }
+        if newURL != loadedURL {
+            syncContentFromDocument()
         }
     }
-    
-    final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
-        var parent: WebView
-        var isEditorReady = false
-        var loadedURL: URL?
-        var loadedStyle: String?
-        var lastReceivedText: String?
-        
-        init(_ parent: WebView) {
-            self.parent = parent
+
+    private func updateStyleIfNeeded(_ style: String) {
+        guard isEditorReady else { return }
+        if style != loadedStyle {
+            loadedStyle = style
+            let css = document.loadCSS(for: style)
+            let jsString = "window.updateStyle(\(css.jsEscaped));"
+            webView.evaluateJavaScript(jsString)
         }
-        
-        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-            if message.name == "editorReady" {
-                isEditorReady = true
-                
-                let document = parent.document
-                // Initial load of content and style
-                let markdown = document.bodyText
-                let style = document.previewStyle
-                let css = document.loadCSS(for: style)
-                let jekyllTitle = document.jekyllTitle
-                let jekyllDate = document.jekyllDate
-                let jekyllTags = document.jekyllTags
-                let hasJekyll = !document.frontMatterText.isEmpty
-                
-                loadedURL = document.url
-                loadedStyle = style
-                lastReceivedText = markdown
-                
-                let setContentJS = "window.setMarkdownContent(\(markdown.jsEscaped), \(jekyllTitle.jsEscaped), \(jekyllDate.jsEscaped), \(jekyllTags.jsEscaped), \(hasJekyll));"
-                let setStyleJS = "window.updateStyle(\(css.jsEscaped));"
-                
-                message.webView?.evaluateJavaScript(setContentJS)
-                message.webView?.evaluateJavaScript(setStyleJS)
-            } else if message.name == "contentDidChange" {
-                guard let body = message.body as? [String: Any],
-                      let markdown = body["markdown"] as? String,
-                      let html = body["html"] as? String else {
-                    return
-                }
-                
-                self.lastReceivedText = markdown
-                
+    }
+
+    // MARK: - WKScriptMessageHandler
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        switch message.name {
+        case "editorReady":
+            isEditorReady = true
+            let markdown = document.bodyText
+            let style = document.previewStyle
+            let css = document.loadCSS(for: style)
+            let jekyllTitle = document.jekyllTitle
+            let jekyllDate = document.jekyllDate
+            let jekyllTags = document.jekyllTags
+            let hasJekyll = !document.frontMatterText.isEmpty
+
+            loadedURL = document.url
+            loadedStyle = style
+            lastReceivedText = markdown
+
+            let setContentJS = "window.setMarkdownContent(\(markdown.jsEscaped), \(jekyllTitle.jsEscaped), \(jekyllDate.jsEscaped), \(jekyllTags.jsEscaped), \(hasJekyll));"
+            let setStyleJS = "window.updateStyle(\(css.jsEscaped));"
+
+            webView.evaluateJavaScript(setContentJS)
+            webView.evaluateJavaScript(setStyleJS)
+
+        case "contentDidChange":
+            guard let body = message.body as? [String: Any],
+                  let markdown = body["markdown"] as? String,
+                  let html = body["html"] as? String else {
+                return
+            }
+            lastReceivedText = markdown
+            DispatchQueue.main.async { [weak self] in
+                self?.document.updateTextFromWebview(markdown, rawHtml: html)
+            }
+
+        case "jekyllTitleDidChange":
+            if let body = message.body as? [String: Any], let title = body["title"] as? String {
                 DispatchQueue.main.async { [weak self] in
-                    guard let self = self else { return }
-                    // Update text in document model
-                    self.parent.document.updateTextFromWebview(markdown, rawHtml: html)
-                }
-            } else if message.name == "jekyllTitleDidChange" {
-                guard let body = message.body as? [String: Any],
-                      let title = body["title"] as? String else {
-                    return
-                }
-                
-                DispatchQueue.main.async { [weak self] in
-                    guard let self = self else { return }
-                    self.parent.document.jekyllTitle = title
-                }
-            } else if message.name == "jekyllDateDidChange" {
-                guard let body = message.body as? [String: Any],
-                      let date = body["date"] as? String else {
-                    return
-                }
-                
-                DispatchQueue.main.async { [weak self] in
-                    guard let self = self else { return }
-                    self.parent.document.jekyllDate = date
-                }
-            } else if message.name == "jekyllTagsDidChange" {
-                guard let body = message.body as? [String: Any],
-                      let tags = body["tags"] as? String else {
-                    return
-                }
-                
-                DispatchQueue.main.async { [weak self] in
-                    guard let self = self else { return }
-                    self.parent.document.jekyllTags = tags
-                }
-            } else if message.name == "jsLog" {
-                if let log = message.body as? String {
-                    print("🌐 [Web Log]: \(log)")
-                }
-            } else if message.name == "jsError" {
-                if let errorDict = message.body as? [String: Any],
-                   let msg = errorDict["message"] as? String,
-                   let line = errorDict["lineno"] as? Int,
-                   let col = errorDict["colno"] as? Int,
-                   let source = errorDict["source"] as? String {
-                    let stack = errorDict["error"] as? String ?? ""
-                    print("🔴 [Web Error] \(msg) at \(source):\(line):\(col)\nStack: \(stack)")
-                    
-                    // Show native macOS alert dialog
-                    DispatchQueue.main.async {
-                        let alert = NSAlert()
-                        alert.messageText = "网页渲染/脚本错误 (Web Error)"
-                        alert.informativeText = """
-                        错误信息: \(msg)
-                        
-                        文件: \(source)
-                        行: \(line), 列: \(col)
-                        
-                        堆栈信息 (Stack Trace):
-                        \(stack)
-                        """
-                        alert.alertStyle = .warning
-                        alert.addButton(withTitle: "确定 (OK)")
-                        alert.runModal()
-                    }
+                    self?.document.jekyllTitle = title
                 }
             }
+
+        case "jekyllDateDidChange":
+            if let body = message.body as? [String: Any], let date = body["date"] as? String {
+                DispatchQueue.main.async { [weak self] in
+                    self?.document.jekyllDate = date
+                }
+            }
+
+        case "jekyllTagsDidChange":
+            if let body = message.body as? [String: Any], let tags = body["tags"] as? String {
+                DispatchQueue.main.async { [weak self] in
+                    self?.document.jekyllTags = tags
+                }
+            }
+
+        case "jsLog":
+            if let log = message.body as? String {
+                print("🌐 [Web Log]: \(log)")
+            }
+
+        case "jsError":
+            if let errorDict = message.body as? [String: Any],
+               let msg = errorDict["message"] as? String,
+               let line = errorDict["lineno"] as? Int,
+               let col = errorDict["colno"] as? Int,
+               let source = errorDict["source"] as? String {
+                let stack = errorDict["error"] as? String ?? ""
+                print("🔴 [Web Error] \(msg) at \(source):\(line):\(col)\nStack: \(stack)")
+            }
+
+        default:
+            break
         }
     }
 }
 
+private final class InspectableWKWebView: WKWebView {
+    override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
+        super.willOpenMenu(menu, with: event)
+        #if compiler(>=5.8)
+        if #available(macOS 13.3, *) {
+            if isInspectable {
+                let hasInspectElement = menu.items.contains { $0.identifier?.rawValue == "WKMenuItemIdentifierInspectElement" }
+                if !hasInspectElement {
+                    menu.addItem(NSMenuItem.separator())
+                    let inspectItem = NSMenuItem(
+                        title: "审查元素 (Inspect Element)",
+                        action: #selector(triggerInspectElement),
+                        keyEquivalent: "i"
+                    )
+                    inspectItem.keyEquivalentModifierMask = [.command, .option]
+                    inspectItem.target = self
+                    menu.addItem(inspectItem)
+                }
+            }
+        }
+        #endif
+    }
+
+    @objc private func triggerInspectElement() {
+        let js = "console.log('Inspect Element requested from menu');"
+        evaluateJavaScript(js, completionHandler: nil)
+    }
+}
+
 private func loadTiptapBundle() -> String {
-    // 1. Try finding in the flattened bundle root
     if let url = Bundle.main.url(forResource: "tiptap-bundle", withExtension: "js") {
         if let content = try? String(contentsOf: url, encoding: .utf8) {
             return content
         }
     }
-    // 2. Try finding under JS subdirectory (Standard SwiftPM copy structure)
     if let url = Bundle.main.url(forResource: "tiptap-bundle", withExtension: "js", subdirectory: "JS") {
         if let content = try? String(contentsOf: url, encoding: .utf8) {
             return content
         }
     }
-    // 3. Try finding under Resources/JS subdirectory (Custom folder copy structure)
     if let url = Bundle.main.url(forResource: "tiptap-bundle", withExtension: "js", subdirectory: "Resources/JS") {
         if let content = try? String(contentsOf: url, encoding: .utf8) {
             return content
@@ -311,7 +342,6 @@ private func getEditorHTMLTemplate() -> String {
                 min-height: 100%;
                 outline: none;
             }
-            /* Add task list checkboxes styling in editor */
             .tiptap ul[data-type="taskList"] {
                 list-style: none;
                 padding: 0;
@@ -328,7 +358,6 @@ private func getEditorHTMLTemplate() -> String {
             .tiptap ul[data-type="taskList"] li > div {
                 flex: 1;
             }
-            /* Add table styling in editor */
             .tiptap table {
                 border-collapse: collapse;
                 table-layout: fixed;
@@ -449,7 +478,7 @@ private func getEditorHTMLTemplate() -> String {
                         <input type="text" id="jekyll-date-input" class="jekyll-input-field" placeholder="如: 2026-07-15 15:30:00 +0800" />
                     </div>
                     <div class="jekyll-field">
-                        <label for="jekyll-tags-input">文章标签 (逗号分隔)</label>
+                        <label for="jekyll-date-tags">文章标签 (逗号分隔)</label>
                         <input type="text" id="jekyll-tags-input" class="jekyll-input-field" placeholder="如: apple, swift, ios" />
                     </div>
                 </div>
@@ -558,26 +587,25 @@ private func getEditorHTMLTemplate() -> String {
                             const text = editor.state.doc.textBetween(currentPos - 1, currentPos);
                             if (text === String.fromCharCode(92) || text === '/' || text === '、') {
                                 triggerPos = currentPos - 1;
-                                console.log("onUpdate trigger: opening slash menu at pos", triggerPos);
                                 openSlashMenu();
                             }
                         }
                     } else {
                         if (currentPos <= triggerPos) {
-                            closeSlashMenu("onUpdate-pos-less-equal (current: " + currentPos + ", trigger: " + triggerPos + ")");
+                            closeSlashMenu("onUpdate-pos-less-equal");
                             return;
                         }
                         
                         const text = editor.state.doc.textBetween(triggerPos, currentPos);
                         const triggerChar = text[0];
                         if (triggerChar !== String.fromCharCode(92) && triggerChar !== '/' && triggerChar !== '、') {
-                            closeSlashMenu("onUpdate-invalid-char (char: " + triggerChar + ")");
+                            closeSlashMenu("onUpdate-invalid-char");
                             return;
                         }
                         
                         const query = text.slice(1).toLowerCase();
                         if (query.includes(' ') || query.includes(String.fromCharCode(10))) {
-                            closeSlashMenu("onUpdate-space-or-newline (query: " + query + ")");
+                            closeSlashMenu("onUpdate-space-or-newline");
                             return;
                         }
                         
@@ -594,7 +622,6 @@ private func getEditorHTMLTemplate() -> String {
                     if (!slashMenuOpen) return;
                     const { selection } = editor.state;
                     const currentPos = selection.from;
-                    // Auto-close if selection jumps outside trigger bounds
                     if (currentPos <= triggerPos || currentPos > triggerPos + 15) {
                         closeSlashMenu("selection-update-out-of-bounds");
                     }
@@ -661,22 +688,23 @@ private func getEditorHTMLTemplate() -> String {
             document.body.appendChild(slashMenu);
 
             function getCaretCoordinates() {
+                try {
+                    const { selection } = editor.state;
+                    const coords = editor.view.coordsAtPos(selection.from);
+                    if (coords) {
+                        return {
+                            top: coords.bottom + window.scrollY,
+                            left: coords.left + window.scrollX,
+                            height: (coords.bottom - coords.top) || 20
+                        };
+                    }
+                } catch (e) {}
                 const sel = window.getSelection();
-                if (!sel.rangeCount) return { top: 0, left: 0, height: 20 };
-                const range = sel.getRangeAt(0).cloneRange();
-                let rect = range.getBoundingClientRect();
-                if (rect.width === 0 && rect.height === 0) {
-                    const span = document.createElement('span');
-                    span.appendChild(document.createTextNode('\\u200b'));
-                    range.insertNode(span);
-                    rect = span.getBoundingClientRect();
-                    const parent = span.parentNode;
-                    parent.removeChild(span);
-                    parent.normalize();
-                }
+                if (!sel || !sel.rangeCount) return { top: 0, left: 0, height: 20 };
+                const rect = sel.getRangeAt(0).getBoundingClientRect();
                 return {
-                    top: rect.bottom + window.scrollY,
-                    left: rect.left + window.scrollX,
+                    top: (rect.bottom || 0) + window.scrollY,
+                    left: (rect.left || 0) + window.scrollX,
                     height: rect.height || 20
                 };
             }
@@ -742,13 +770,10 @@ private func getEditorHTMLTemplate() -> String {
                 const { selection } = state;
                 const end = selection.from;
                 
-                // 1. Save all current active marks (at the cursor/slash character)
                 const previousMarks = state.storedMarks || selection.$from.marks() || [];
                 
-                // 2. Delete the slash trigger character (which clears storedMarks)
                 editor.chain().focus().deleteRange({ from: triggerPos, to: end }).run();
                 
-                // 3. Restore the saved marks to storedMarks
                 if (previousMarks.length > 0) {
                     let tr = editor.view.state.tr;
                     previousMarks.forEach(mark => {
@@ -757,9 +782,7 @@ private func getEditorHTMLTemplate() -> String {
                     editor.view.dispatch(tr);
                 }
                 
-                // 4. Run the slash menu command (which will toggle/apply the selected option)
                 item.command(editor);
-                
                 closeSlashMenu("selectSlashItem");
             }
 
@@ -769,7 +792,6 @@ private func getEditorHTMLTemplate() -> String {
                 activeIndex = 0;
                 renderSlashMenu();
                 
-                // Temporarily display block offscreen/hidden to measure its real dimensions
                 slashMenu.style.visibility = 'hidden';
                 slashMenu.style.display = 'block';
                 
@@ -778,33 +800,27 @@ private func getEditorHTMLTemplate() -> String {
                 
                 const coords = getCaretCoordinates();
                 
-                // Webview viewport bounds
                 const viewportWidth = window.innerWidth;
                 const viewportHeight = window.innerHeight;
                 
-                // Calculate optimal left (horizontal boundary safety)
                 let left = coords.left;
                 if (left + menuWidth > viewportWidth - 12) {
-                    left = viewportWidth - menuWidth - 12; // Shift left
+                    left = viewportWidth - menuWidth - 12;
                 }
                 if (left < 12) {
                     left = 12;
                 }
                 
-                // Calculate optimal top (vertical boundary safety and auto flip-up)
-                let top = coords.top + 6; // Default is below caret
+                let top = coords.top + 6;
                 if (top + menuHeight > viewportHeight - 12) {
-                    // If overflows bottom edge, try positioning ABOVE caret
                     const topAbove = coords.top - coords.height - menuHeight - 6;
                     if (topAbove > 12) {
-                        top = topAbove; // Flip up!
+                        top = topAbove;
                     } else {
-                        // If no room above either, align to bottom edge
                         top = viewportHeight - menuHeight - 12;
                     }
                 }
                 
-                // Apply resolved safe coordinates and make visible
                 slashMenu.style.left = left + 'px';
                 slashMenu.style.top = top + 'px';
                 slashMenu.style.visibility = 'visible';
@@ -850,7 +866,6 @@ private func getEditorHTMLTemplate() -> String {
                     }
                 } else {
                     if (event.key === 'Escape') {
-                        // If no slash menu is open, pressing Esc clears all active inline marks (bold, italic, etc.)
                         const activeMarks = editor.state.storedMarks || editor.state.selection.$from.marks();
                         if (activeMarks && activeMarks.length > 0) {
                             event.preventDefault();
@@ -862,7 +877,6 @@ private func getEditorHTMLTemplate() -> String {
             }, true);
 
             function closeSlashMenu(reason) {
-                console.log("closeSlashMenu triggered. Reason:", reason);
                 slashMenuOpen = false;
                 slashMenu.style.display = 'none';
                 document.removeEventListener('mousedown', clickOutsideHandler);
@@ -883,14 +897,11 @@ private func getEditorHTMLTemplate() -> String {
                     container.appendChild(selection.getRangeAt(i).cloneContents());
                 }
                 
-                // 1. Remove all ProseMirror trailing break helper elements completely
                 const trailingBreaks = container.querySelectorAll('.ProseMirror-trailingBreak');
                 trailingBreaks.forEach(br => br.remove());
                 
-                // 2. Process all elements to strip other ProseMirror specific classes and data attributes
                 const allElements = container.querySelectorAll('*');
                 allElements.forEach(el => {
-                    // Strip class list from any ProseMirror-related classes
                     const classes = Array.from(el.classList);
                     classes.forEach(c => {
                         if (c.startsWith('ProseMirror')) {
@@ -901,7 +912,6 @@ private func getEditorHTMLTemplate() -> String {
                         el.removeAttribute('class');
                     }
                     
-                    // Strip data attributes and other editing helpers
                     const attrs = Array.from(el.attributes);
                     attrs.forEach(attr => {
                         if (attr.name.startsWith('data-') || attr.name === 'contenteditable') {
@@ -910,7 +920,6 @@ private func getEditorHTMLTemplate() -> String {
                     });
                 });
                 
-                // 3. Keep inline styles on Heading elements (H1, H2, H3) and Tables (from previous steps)
                 const h2s = container.querySelectorAll('h2');
                 h2s.forEach(h2 => {
                     h2.setAttribute('style', 'font-size: 24px; border-bottom: 1px solid #cccccc; padding-bottom: 0.3em; color: black; margin-top: 1.5em; margin-bottom: 1em;');
@@ -932,7 +941,6 @@ private func getEditorHTMLTemplate() -> String {
                     td.setAttribute('style', 'border: 1px solid #ddd; padding: 8px 12px; vertical-align: top;');
                 });
                 
-                // 4. Set custom clean HTML and normal plain text to clipboard
                 e.clipboardData.setData('text/html', container.innerHTML);
                 e.clipboardData.setData('text/plain', selection.toString());
                 e.preventDefault();
@@ -943,10 +951,6 @@ private func getEditorHTMLTemplate() -> String {
                 editor.commands.setContent(markdown, { contentType: 'markdown' });
                 isUpdatingFromSwift = false;
                 
-                // Focus on editor
-                editor.commands.focus();
-                
-                // Handle Jekyll header card visibility and value
                 const card = document.getElementById('jekyll-header-card');
                 const titleInput = document.getElementById('jekyll-title-input');
                 const dateInput = document.getElementById('jekyll-date-input');
@@ -977,7 +981,6 @@ private func getEditorHTMLTemplate() -> String {
                 }
             };
 
-            // Set up Jekyll title, date, and tags input listeners
             document.getElementById('jekyll-title-input').addEventListener('input', function(e) {
                 window.webkit.messageHandlers.jekyllTitleDidChange.postMessage({
                     title: e.target.value
@@ -996,7 +999,6 @@ private func getEditorHTMLTemplate() -> String {
                 });
             });
 
-            // Notify Swift that the editor is ready
             window.webkit.messageHandlers.editorReady.postMessage({});
         </script>
     </body>
@@ -1004,65 +1006,16 @@ private func getEditorHTMLTemplate() -> String {
     """
 }
 
-struct SourceEditorView: View {
-    @ObservedObject var document: DocumentModel
-    
-    var body: some View {
-        TextEditor(text: Binding(
-            get: { document.text },
-            set: { document.updateText($0) }
-        ))
-        .font(.system(size: 14.5, weight: .regular, design: .monospaced))
-        .lineSpacing(6)
-        .padding(.horizontal, 36)
-        .padding(.vertical, 24)
-        .background(Color(.textBackgroundColor))
-    }
-}
-
-struct PreviewView: View {
-    @ObservedObject var state: AppState
-
-    var body: some View {
-        VStack(spacing: 0) {
-            if state.editMode == .wysiwyg {
-                WebView(document: state.document, isInspectEnabled: state.isWebViewInspectEnabled)
-                    .background(Color(.textBackgroundColor))
-            } else {
-                SourceEditorView(document: state.document)
-            }
-        }
-    }
-}
-
-class InspectableWebView: WKWebView {
-    override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
-        super.willOpenMenu(menu, with: event)
-        
-        for item in menu.items {
-            if let action = item.action {
-                let actionStr = NSStringFromSelector(action)
-                if actionStr.contains("reload") || actionStr.contains("Reload") {
-                    menu.removeItem(item)
-                    continue
-                }
-            }
-            if item.title.contains("Reload") || item.title.contains("重新加载") {
-                menu.removeItem(item)
-            }
-        }
-    }
-}
-
 extension String {
     var jsEscaped: String {
-        guard let data = try? JSONSerialization.data(withJSONObject: [self], options: []),
-              let jsonStr = String(data: data, encoding: .utf8),
-              jsonStr.count >= 2 else {
+        guard let data = try? JSONSerialization.data(withJSONObject: [self]),
+              let jsonString = String(data: data, encoding: .utf8) else {
             return "\"\""
         }
-        let startIndex = jsonStr.index(jsonStr.startIndex, offsetBy: 1)
-        let endIndex = jsonStr.index(jsonStr.endIndex, offsetBy: -1)
-        return String(jsonStr[startIndex..<endIndex])
+        let trimmed = jsonString.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasPrefix("[") && trimmed.hasSuffix("]") {
+            return String(trimmed.dropFirst().dropLast())
+        }
+        return "\"\""
     }
 }

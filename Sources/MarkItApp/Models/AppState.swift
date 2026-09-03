@@ -41,10 +41,17 @@ final class AppState: ObservableObject {
         didSet { document.previewStyle = previewStyle }
     }
 
+    private var defaults: UserDefaults {
+        if let bundleId = Bundle.main.bundleIdentifier, bundleId == "com.debugly.markit" {
+            return UserDefaults.standard
+        }
+        return UserDefaults(suiteName: "com.debugly.markit") ?? UserDefaults.standard
+    }
+
     private let inspectKey = "MarkIt.IsWebViewInspectEnabled"
     @Published var isWebViewInspectEnabled: Bool = false {
         didSet {
-            UserDefaults.standard.set(isWebViewInspectEnabled, forKey: inspectKey)
+            defaults.set(isWebViewInspectEnabled, forKey: inspectKey)
         }
     }
 
@@ -74,7 +81,7 @@ final class AppState: ObservableObject {
     }
 
     private func restoreRecentFiles() {
-        if let data = UserDefaults.standard.data(forKey: recentFilesKey),
+        if let data = defaults.data(forKey: recentFilesKey),
            let urls = try? JSONDecoder().decode([URL].self, from: data) {
             recentFiles = urls.filter { canOpenMarkdownFile($0) }
         }
@@ -82,7 +89,7 @@ final class AppState: ObservableObject {
 
     private func saveRecentFiles() {
         if let data = try? JSONEncoder().encode(recentFiles) {
-            UserDefaults.standard.set(data, forKey: recentFilesKey)
+            defaults.set(data, forKey: recentFilesKey)
         }
     }
 
@@ -109,21 +116,21 @@ final class AppState: ObservableObject {
     }
 
     private func restorePreviewStyle() {
-        previewStyle = UserDefaults.standard.string(forKey: stylesKey) ?? "GitHub.css"
+        previewStyle = defaults.string(forKey: stylesKey) ?? "GitHub.css"
     }
 
     private func restoreWebViewInspectEnabled() {
-        if UserDefaults.standard.object(forKey: inspectKey) == nil {
+        if defaults.object(forKey: inspectKey) == nil {
             isWebViewInspectEnabled = true
-            UserDefaults.standard.set(true, forKey: inspectKey)
+            defaults.set(true, forKey: inspectKey)
         } else {
-            isWebViewInspectEnabled = UserDefaults.standard.bool(forKey: inspectKey)
+            isWebViewInspectEnabled = defaults.bool(forKey: inspectKey)
         }
     }
 
     func setPreviewStyle(_ style: String) {
         previewStyle = style
-        UserDefaults.standard.set(style, forKey: stylesKey)
+        defaults.set(style, forKey: stylesKey)
     }
 
     func addRootFolder(_ url: URL, storeBookmark: Bool = false) {
@@ -413,11 +420,16 @@ final class AppState: ObservableObject {
 
     private func persistBookmark(for url: URL) {
         do {
-            let data = try url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
-            var existing = UserDefaults.standard.array(forKey: bookmarksKey) as? [Data] ?? []
+            let data: Data
+            if let secData = try? url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil) {
+                data = secData
+            } else {
+                data = try url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+            }
+            var existing = defaults.array(forKey: bookmarksKey) as? [Data] ?? []
             if existing.contains(data) == false {
                 existing.append(data)
-                UserDefaults.standard.set(existing, forKey: bookmarksKey)
+                defaults.set(existing, forKey: bookmarksKey)
             }
         } catch {
             return
@@ -425,23 +437,37 @@ final class AppState: ObservableObject {
     }
 
     private func saveBookmarks() {
-        let bookmarks = rootFolders.compactMap {
-            try? $0.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
+        let bookmarks = rootFolders.compactMap { url -> Data? in
+            if let secData = try? url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil) {
+                return secData
+            }
+            return try? url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
         }
-        UserDefaults.standard.set(bookmarks, forKey: bookmarksKey)
+        defaults.set(bookmarks, forKey: bookmarksKey)
     }
 
     private func restoreBookmarks() {
-        let stored = UserDefaults.standard.array(forKey: bookmarksKey) as? [Data] ?? []
+        let stored = defaults.array(forKey: bookmarksKey) as? [Data] ?? []
         var resolved: [URL] = []
         for data in stored {
             var isStale = false
+            var resolvedURL: URL? = nil
             if let url = try? URL(
                 resolvingBookmarkData: data,
                 options: [.withSecurityScope],
                 relativeTo: nil,
                 bookmarkDataIsStale: &isStale
             ) {
+                resolvedURL = url
+            } else if let url = try? URL(
+                resolvingBookmarkData: data,
+                options: [],
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale
+            ) {
+                resolvedURL = url
+            }
+            if let url = resolvedURL {
                 beginAccessingRootFolder(url)
                 resolved.append(url)
             }
@@ -622,12 +648,12 @@ final class AppState: ObservableObject {
         print("[MarkIt Log] saveLastOpenedFile called for URL: \(url.path)")
         do {
             let bookmarkData = try url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
-            UserDefaults.standard.set(bookmarkData, forKey: lastOpenedFileBookmarkKey)
+            defaults.set(bookmarkData, forKey: lastOpenedFileBookmarkKey)
             print("[MarkIt Log] saveLastOpenedFile: Saved security-scoped bookmark data successfully.")
         } catch {
             print("[MarkIt Log] saveLastOpenedFile: Failed to create security-scoped bookmark. Error: \(error). Trying raw URL...")
             if let urlData = try? JSONEncoder().encode(url) {
-                UserDefaults.standard.set(urlData, forKey: lastOpenedFileURLKey)
+                defaults.set(urlData, forKey: lastOpenedFileURLKey)
                 print("[MarkIt Log] saveLastOpenedFile: Saved raw URL data successfully.")
             } else {
                 print("[MarkIt Log] saveLastOpenedFile: Failed to encode raw URL.")
@@ -637,8 +663,8 @@ final class AppState: ObservableObject {
 
     private func clearLastOpenedFile() {
         print("[MarkIt Log] clearLastOpenedFile called.")
-        UserDefaults.standard.removeObject(forKey: lastOpenedFileBookmarkKey)
-        UserDefaults.standard.removeObject(forKey: lastOpenedFileURLKey)
+        defaults.removeObject(forKey: lastOpenedFileBookmarkKey)
+        defaults.removeObject(forKey: lastOpenedFileURLKey)
     }
 
     func restoreLastOpenedFile() {
@@ -652,7 +678,7 @@ final class AppState: ObservableObject {
             return 
         }
 
-        if let bookmarkData = UserDefaults.standard.data(forKey: lastOpenedFileBookmarkKey) {
+        if let bookmarkData = defaults.data(forKey: lastOpenedFileBookmarkKey) {
             print("[MarkIt Log] restoreLastOpenedFile: Found bookmarkData.")
             var isStale = false
             if let url = try? URL(
@@ -693,7 +719,7 @@ final class AppState: ObservableObject {
             print("[MarkIt Log] restoreLastOpenedFile: No bookmarkData found in UserDefaults.")
         }
 
-        if let urlData = UserDefaults.standard.data(forKey: lastOpenedFileURLKey),
+        if let urlData = defaults.data(forKey: lastOpenedFileURLKey),
            let url = try? JSONDecoder().decode(URL.self, from: urlData) {
             print("[MarkIt Log] restoreLastOpenedFile: Found raw URL: \(url.path)")
             if canOpenMarkdownFile(url) {

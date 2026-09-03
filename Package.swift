@@ -19,8 +19,9 @@ let package = Package(
                 "project.yml",
                 "Markit.xcodeproj",
                 "Resources/Info.plist",
-                "Resources/playstore.png",
-                "Resources/appstore.png",
+                "build.sh",
+                "bundle_tiptap.sh",
+                "clean_bundle.py"
             ],
             sources: [
                 "Sources/MarkItApp"
