@@ -217,21 +217,9 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
 
     private func reloadDataAndExpand() {
         outlineView.reloadData()
-        outlineView.expandItem(recentGroupIdentifier, expandChildren: true)
-        outlineView.expandItem(folderGroupIdentifier, expandChildren: true)
-        expandAllFolders(items: state.tree)
+        outlineView.expandItem(recentGroupIdentifier, expandChildren: false)
+        outlineView.expandItem(folderGroupIdentifier, expandChildren: false)
         syncSelection(state.selection)
-    }
-
-    private func expandAllFolders(items: [FileNode]) {
-        for item in items {
-            if item.isDirectory {
-                outlineView.expandItem(item)
-                if let children = item.children {
-                    expandAllFolders(items: children)
-                }
-            }
-        }
     }
 
     private func syncSelection(_ selectedURL: URL?) {
