@@ -28,6 +28,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     private var isRecentGroupExpanded = true
     private var isFolderGroupExpanded = true
     private var isPerformingLocalTreeUpdate = false
+    private var isSyncingSelection = false
 
     private enum SelectionSource {
         case folderTree
@@ -216,7 +217,19 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         state.$recentFiles
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
-                self?.reloadDataAndExpand()
+                guard let self = self else { return }
+                if self.isPerformingLocalTreeUpdate { return }
+                let currentRootCount = self.outlineView.numberOfChildren(ofItem: nil)
+                let expectedRootCount = self.state.recentFiles.isEmpty ? 1 : 2
+                if currentRootCount != expectedRootCount {
+                    self.reloadDataAndExpand()
+                } else {
+                    self.outlineView.reloadItem(self.recentGroupIdentifier, reloadChildren: true)
+                    if self.isRecentGroupExpanded {
+                        self.outlineView.expandItem(self.recentGroupIdentifier, expandChildren: false)
+                    }
+                    self.syncSelection(self.state.selection)
+                }
             }
             .store(in: &cancellables)
 
@@ -343,9 +356,14 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
 
     private func syncSelection(_ selectedURL: URL?) {
         guard let url = selectedURL else {
+            isSyncingSelection = true
             outlineView.deselectAll(nil)
+            isSyncingSelection = false
             return
         }
+
+        isSyncingSelection = true
+        defer { isSyncingSelection = false }
 
         let stdURL = url.standardizedFileURL
 
@@ -428,13 +446,17 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             } else {
                 lastClickedSidebarURL = node.url
                 selectionSource = .folderTree
-                state.openFile(node.url)
+                if state.selection?.standardizedFileURL != node.url.standardizedFileURL {
+                    state.openFile(node.url)
+                }
                 syncSelection(node.url)
             }
         } else if let url = item as? URL {
             lastClickedSidebarURL = url
             selectionSource = .recentFiles
-            state.openFile(url)
+            if state.selection?.standardizedFileURL != url.standardizedFileURL {
+                state.openFile(url)
+            }
             syncSelection(url)
         }
     }
@@ -670,27 +692,79 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     }
 
     func outlineView(_ outlineView: NSOutlineView, selectionIndexesForProposedSelection proposedSelectionIndexes: IndexSet) -> IndexSet {
-        var validIndexes = IndexSet()
-        for idx in proposedSelectionIndexes {
-            guard let item = outlineView.item(atRow: idx) else { continue }
-            if item is String { continue }
-            if let node = item as? FileNode, node.isDirectory { continue }
-            validIndexes.insert(idx)
+        guard let proposedIndex = proposedSelectionIndexes.first else {
+            return outlineView.selectedRowIndexes
         }
-        return validIndexes.isEmpty ? outlineView.selectedRowIndexes : validIndexes
+
+        func isSelectable(row: Int) -> Bool {
+            guard row >= 0, row < outlineView.numberOfRows, let item = outlineView.item(atRow: row) else { return false }
+            if item is String { return false }
+            if let node = item as? FileNode, node.isDirectory { return false }
+            return true
+        }
+
+        if isSelectable(row: proposedIndex) {
+            return IndexSet(integer: proposedIndex)
+        }
+
+        // If the change is triggered by a mouse click on an unselectable row, do not scan; keep current selection.
+        if outlineView.clickedRow >= 0 {
+            return outlineView.selectedRowIndexes
+        }
+
+        // Keyboard navigation: skip unselectable items (headers, folders)
+        let currentRow = outlineView.selectedRow
+        if currentRow < 0 || proposedIndex > currentRow {
+            // Moving down: scan forward
+            for row in proposedIndex..<outlineView.numberOfRows {
+                if isSelectable(row: row) {
+                    return IndexSet(integer: row)
+                }
+            }
+        } else if proposedIndex < currentRow {
+            // Moving up: scan backward
+            for row in stride(from: proposedIndex, through: 0, by: -1) {
+                if isSelectable(row: row) {
+                    return IndexSet(integer: row)
+                }
+            }
+        }
+
+        return outlineView.selectedRowIndexes
     }
 
     func outlineViewSelectionDidChange(_ notification: Notification) {
         lastClickedNodeURL = nil
+        guard !isSyncingSelection else {
+            reloadVisibleRows()
+            return
+        }
+
         let selectedRow = outlineView.selectedRow
-        if selectedRow >= 0, let item = outlineView.item(atRow: selectedRow) {
-            if item is URL {
-                selectionSource = .recentFiles
-            } else if let node = item as? FileNode, !node.isDirectory {
-                selectionSource = .folderTree
+        guard selectedRow >= 0, let item = outlineView.item(atRow: selectedRow) else {
+            reloadVisibleRows()
+            return
+        }
+
+        let targetURL: URL?
+        if let url = item as? URL {
+            selectionSource = .recentFiles
+            targetURL = url
+        } else if let node = item as? FileNode, !node.isDirectory {
+            selectionSource = .folderTree
+            targetURL = node.url
+        } else {
+            targetURL = nil
+        }
+
+        reloadVisibleRows()
+
+        if let url = targetURL {
+            lastClickedSidebarURL = url
+            if state.selection?.standardizedFileURL != url.standardizedFileURL {
+                state.openFile(url)
             }
         }
-        reloadVisibleRows()
     }
 
     func outlineViewItemDidExpand(_ notification: Notification) {
