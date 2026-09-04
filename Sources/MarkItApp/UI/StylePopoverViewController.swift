@@ -146,9 +146,7 @@ private final class StyleTableCellView: NSTableCellView {
         titleLabel.lineBreakMode = .byTruncatingTail
 
         checkmarkImageView.translatesAutoresizingMaskIntoConstraints = false
-        if #available(macOS 11.0, *) {
-            checkmarkImageView.image = NSImage(systemSymbolName: "checkmark", accessibilityDescription: nil)
-        }
+        checkmarkImageView.image = NSImage(systemSymbolName: "checkmark", accessibilityDescription: nil)
         checkmarkImageView.contentTintColor = .controlAccentColor
 
         addSubview(titleLabel)

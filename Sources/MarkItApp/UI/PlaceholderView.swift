@@ -31,9 +31,7 @@ final class PlaceholderView: NSView {
         stackView.spacing = 12
         stackView.translatesAutoresizingMaskIntoConstraints = false
 
-        if #available(macOS 11.0, *) {
-            imageView.image = NSImage(systemSymbolName: systemImageName, accessibilityDescription: nil)
-        }
+        imageView.image = NSImage(systemSymbolName: systemImageName, accessibilityDescription: nil)
         imageView.contentTintColor = .secondaryLabelColor
         imageView.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 42, weight: .regular)
         imageView.translatesAutoresizingMaskIntoConstraints = false
@@ -63,9 +61,7 @@ final class PlaceholderView: NSView {
     }
 
     func update(title: String, systemImageName: String, message: String) {
-        if #available(macOS 11.0, *) {
-            imageView.image = NSImage(systemSymbolName: systemImageName, accessibilityDescription: nil)
-        }
+        imageView.image = NSImage(systemSymbolName: systemImageName, accessibilityDescription: nil)
         titleLabel.stringValue = title
         messageLabel.stringValue = message
     }

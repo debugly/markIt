@@ -51,9 +51,7 @@ final class TopToolbarView: NSView {
         sidebarButton.translatesAutoresizingMaskIntoConstraints = false
         sidebarButton.bezelStyle = .regularSquare
         sidebarButton.isBordered = false
-        if #available(macOS 11.0, *) {
-            sidebarButton.image = NSImage(systemSymbolName: "sidebar.leading", accessibilityDescription: "显示/隐藏目录")
-        }
+        sidebarButton.image = NSImage(systemSymbolName: "sidebar.leading", accessibilityDescription: "显示/隐藏目录")
         sidebarButton.imageScaling = .scaleProportionallyDown
         sidebarButton.toolTip = "显示/隐藏目录"
         sidebarButton.target = self
@@ -202,23 +200,21 @@ final class TopToolbarView: NSView {
             return
         }
         modeButton.isHidden = false
-        if #available(macOS 11.0, *) {
-            if document.fileType == .html {
-                if state.editMode == .wysiwyg {
-                    modeButton.image = NSImage(systemSymbolName: "globe", accessibilityDescription: nil)
-                    modeButton.toolTip = "网页预览模式"
-                } else {
-                    modeButton.image = NSImage(systemSymbolName: "chevron.left.forwardslash.chevron.right", accessibilityDescription: nil) ?? NSImage(systemSymbolName: "pencil", accessibilityDescription: nil)
-                    modeButton.toolTip = "源码编辑模式"
-                }
+        if document.fileType == .html {
+            if state.editMode == .wysiwyg {
+                modeButton.image = NSImage(systemSymbolName: "globe", accessibilityDescription: nil)
+                modeButton.toolTip = "网页预览模式"
             } else {
-                if state.editMode == .wysiwyg {
-                    modeButton.image = NSImage(systemSymbolName: "doc.richtext", accessibilityDescription: nil)
-                    modeButton.toolTip = "所见即所得模式"
-                } else {
-                    modeButton.image = NSImage(systemSymbolName: "pencil", accessibilityDescription: nil)
-                    modeButton.toolTip = "文本编辑模式"
-                }
+                modeButton.image = NSImage(systemSymbolName: "chevron.left.forwardslash.chevron.right", accessibilityDescription: nil) ?? NSImage(systemSymbolName: "pencil", accessibilityDescription: nil)
+                modeButton.toolTip = "源码编辑模式"
+            }
+        } else {
+            if state.editMode == .wysiwyg {
+                modeButton.image = NSImage(systemSymbolName: "doc.richtext", accessibilityDescription: nil)
+                modeButton.toolTip = "所见即所得模式"
+            } else {
+                modeButton.image = NSImage(systemSymbolName: "pencil", accessibilityDescription: nil)
+                modeButton.toolTip = "文本编辑模式"
             }
         }
     }

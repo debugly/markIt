@@ -65,9 +65,7 @@ final class ExternalOpenViewController: NSViewController {
         openButton.target = self
         openButton.action = #selector(handleOpenExternal)
         openButton.keyEquivalent = "\r"
-        if #available(macOS 11.0, *) {
-            openButton.bezelColor = .controlAccentColor
-        }
+        openButton.bezelColor = .controlAccentColor
 
         // 次要按钮：在访达中显示
         revealButton.bezelStyle = .rounded
@@ -139,7 +137,7 @@ final class ExternalOpenViewController: NSViewController {
             appIcon.size = NSSize(width: 16, height: 16)
             openButton.image = appIcon
             openButton.imagePosition = .imageLeading
-        } else if #available(macOS 11.0, *) {
+        } else {
             openButton.image = NSImage(systemSymbolName: "arrow.up.forward.app", accessibilityDescription: nil)
             openButton.imagePosition = .imageLeading
         }
