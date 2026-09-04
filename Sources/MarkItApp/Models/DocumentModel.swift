@@ -9,6 +9,7 @@ import AppKit
 
 final class DocumentModel: ObservableObject {
     @Published private(set) var url: URL?
+    @Published private(set) var fileType: SupportedFileType = .markdown
     @Published var text: String = ""
     @Published var bodyText: String = ""
     @Published var frontMatterText: String = ""
@@ -294,27 +295,61 @@ final class DocumentModel: ObservableObject {
         self.url = url
         isSettingInitialText = true
 
-        let rawContent: String
-        do {
-            rawContent = try String(contentsOf: url, encoding: .utf8)
-        } catch {
-            rawContent = ""
-        }
+        let detectedType = SupportedFileType.detect(url: url)
+        self.fileType = detectedType
 
-        let split = splitFrontMatter(rawContent)
-        frontMatterText = split.frontMatter
-        bodyText = split.body
-        text = rawContent
+        switch detectedType {
+        case .markdown:
+            let rawContent: String
+            do {
+                rawContent = try String(contentsOf: url, encoding: .utf8)
+            } catch {
+                rawContent = ""
+            }
+            let split = splitFrontMatter(rawContent)
+            frontMatterText = split.frontMatter
+            bodyText = split.body
+            text = rawContent
+
+        case .html, .text:
+            var rawContent = ""
+            if let str = try? String(contentsOf: url, encoding: .utf8) {
+                rawContent = str
+            } else if let str = try? String(contentsOf: url, encoding: .ascii) {
+                rawContent = str
+            } else if let str = try? String(contentsOf: url, encoding: .isoLatin1) {
+                rawContent = str
+            }
+            frontMatterText = ""
+            bodyText = rawContent
+            text = rawContent
+            html = (detectedType == .html) ? rawContent : ""
+
+        case .image, .other:
+            frontMatterText = ""
+            bodyText = ""
+            text = ""
+            html = ""
+        }
 
         isSettingInitialText = false
         isDirty = false
     }
 
     func updateText(_ newValue: String) {
-        let split = splitFrontMatter(newValue)
-        frontMatterText = split.frontMatter
-        bodyText = split.body
-        text = newValue
+        if fileType == .text || fileType == .html {
+            frontMatterText = ""
+            bodyText = newValue
+            text = newValue
+            if fileType == .html {
+                html = newValue
+            }
+        } else {
+            let split = splitFrontMatter(newValue)
+            frontMatterText = split.frontMatter
+            bodyText = split.body
+            text = newValue
+        }
         isDirty = true
         scheduleSave()
     }
@@ -338,6 +373,7 @@ final class DocumentModel: ObservableObject {
     func clear() {
         saveWorkItem?.cancel()
         url = nil
+        fileType = .markdown
         text = ""
         bodyText = ""
         frontMatterText = ""

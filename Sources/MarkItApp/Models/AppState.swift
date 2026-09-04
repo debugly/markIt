@@ -86,7 +86,7 @@ final class AppState: ObservableObject {
     private func restoreRecentFiles() {
         if let data = defaults.data(forKey: recentFilesKey),
            let urls = try? JSONDecoder().decode([URL].self, from: data) {
-            recentFiles = urls.filter { canOpenMarkdownFile($0) }
+            recentFiles = urls.filter { canOpenFile($0) }
         }
     }
 
@@ -111,7 +111,6 @@ final class AppState: ObservableObject {
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
-        panel.allowedContentTypes = [.init(filenameExtension: "md")!, .init(filenameExtension: "markdown")!]
         panel.title = "打开文件"
         if panel.runModal() == .OK, let url = panel.url {
             openFile(url)
@@ -165,7 +164,11 @@ final class AppState: ObservableObject {
     }
 
     func openFile(_ url: URL) {
-        guard canOpenMarkdownFile(url) else { return }
+        guard canOpenFile(url) else { return }
+        let fileType = SupportedFileType.detect(url: url)
+        if fileType == .text || fileType == .html {
+            editMode = .source
+        }
         addToRecentFiles(url)
         selection = url
         _ = requestSwitch(to: url)
@@ -226,8 +229,16 @@ final class AppState: ObservableObject {
         saveRecentFiles()
     }
 
+    func canOpenFile(_ url: URL) -> Bool {
+        var isDir: ObjCBool = false
+        guard fileManager.fileExists(atPath: url.path, isDirectory: &isDir), !isDir.boolValue else {
+            return false
+        }
+        return true
+    }
+
     private func canOpenMarkdownFile(_ url: URL) -> Bool {
-        guard fileManager.fileExists(atPath: url.path) else { return false }
+        guard canOpenFile(url) else { return false }
         let fileExtension = url.pathExtension.lowercased()
         return fileExtension == "md" || fileExtension == "markdown"
     }
@@ -708,7 +719,7 @@ final class AppState: ObservableObject {
             ) {
                 print("[MarkIt Log] restoreLastOpenedFile: Resolved security-scoped URL: \(url.path), isStale: \(isStale)")
                 _ = url.startAccessingSecurityScopedResource()
-                if canOpenMarkdownFile(url) {
+                if canOpenFile(url) {
                     print("[MarkIt Log] restoreLastOpenedFile: Opening resolved security-scoped URL.")
                     openFile(url)
                     return
@@ -726,7 +737,7 @@ final class AppState: ObservableObject {
                 bookmarkDataIsStale: &isStale
             ) {
                 print("[MarkIt Log] restoreLastOpenedFile: Resolved standard URL: \(url.path)")
-                if canOpenMarkdownFile(url) {
+                if canOpenFile(url) {
                     print("[MarkIt Log] restoreLastOpenedFile: Opening resolved standard URL.")
                     openFile(url)
                     return
@@ -741,7 +752,7 @@ final class AppState: ObservableObject {
         if let urlData = defaults.data(forKey: lastOpenedFileURLKey),
            let url = try? JSONDecoder().decode(URL.self, from: urlData) {
             print("[MarkIt Log] restoreLastOpenedFile: Found raw URL: \(url.path)")
-            if canOpenMarkdownFile(url) {
+            if canOpenFile(url) {
                 print("[MarkIt Log] restoreLastOpenedFile: Opening raw URL.")
                 openFile(url)
             } else {

@@ -27,6 +27,8 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     private var expandedFolderURLs = Set<URL>()
     private var isRecentGroupExpanded = true
     private var isFolderGroupExpanded = true
+    private var knownRootFolders = Set<URL>()
+    private var isPerformingLocalTreeUpdate = false
 
     private enum SelectionSource {
         case folderTree
@@ -206,7 +208,9 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         state.$tree
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
-                self?.reloadDataAndExpand()
+                guard let self = self else { return }
+                if self.isPerformingLocalTreeUpdate { return }
+                self.reloadDataAndExpand()
             }
             .store(in: &cancellables)
 
@@ -257,6 +261,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
                     title: node.displayName,
                     isDirectory: node.isDirectory,
                     isSelected: isSelected,
+                    url: node.url,
                     isWebDAVRoot: isWebDAVRoot,
                     syncStatus: syncStatus
                 )
@@ -269,6 +274,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
                     title: displayName,
                     isDirectory: false,
                     isSelected: isSelected,
+                    url: url,
                     isWebDAVRoot: false,
                     syncStatus: syncStatus
                 )
@@ -284,12 +290,13 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             }
         }
 
-        // On initial launch or when roots exist, default root folders to expanded
-        if expandedFolderURLs.isEmpty {
-            for root in state.rootFolders {
-                expandedFolderURLs.insert(root)
-            }
+        // Newly added root folders default to expanded without overriding user-collapsed roots
+        let currentRoots = Set(state.rootFolders)
+        let newRoots = currentRoots.subtracting(knownRootFolders)
+        for root in newRoots {
+            expandedFolderURLs.insert(root)
         }
+        knownRootFolders = currentRoots
 
         outlineView.reloadData()
 
@@ -495,9 +502,8 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
 
     func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
         if item == nil {
-            var count = 0
+            var count = 1 // Folders group is always present
             if !state.recentFiles.isEmpty { count += 1 } // Recent group
-            if !state.tree.isEmpty || state.recentFiles.isEmpty { count += 1 } // Folders group
             return count
         }
 
@@ -633,6 +639,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
                 title: node.displayName,
                 isDirectory: node.isDirectory,
                 isSelected: isSelected,
+                url: node.url,
                 isWebDAVRoot: isWebDAVRoot,
                 syncStatus: syncStatus
             )
@@ -645,6 +652,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
                 title: displayName,
                 isDirectory: false,
                 isSelected: isSelected,
+                url: url,
                 isWebDAVRoot: false,
                 syncStatus: syncStatus
             )
@@ -943,7 +951,35 @@ extension SidebarViewController: NSMenuDelegate {
 
     @objc private func contextRemoveRoot(_ sender: Any? = nil) {
         guard let url = targetURL(from: sender) else { return }
+        removeRootBookmark(url)
+    }
+
+    private func removeRootBookmark(_ url: URL) {
+        let stdURL = url.standardizedFileURL
+        guard let index = state.rootFolders.firstIndex(where: { $0.standardizedFileURL == stdURL }) else {
+            state.removeRootFolder(url)
+            return
+        }
+
+        // Clean up expanded state and known roots for the removed root folder and all its descendants
+        expandedFolderURLs = expandedFolderURLs.filter { !$0.path.hasPrefix(url.path) }
+        knownRootFolders.remove(url)
+
+        // Clear selection if the selected file was within this folder
+        if let currentURL = state.selection, currentURL.path.hasPrefix(url.path) {
+            outlineView.deselectAll(nil)
+        }
+
+        // Mark local update so Combine $tree publisher won't trigger reloadDataAndExpand()
+        isPerformingLocalTreeUpdate = true
         state.removeRootFolder(url)
+
+        // Remove only this row and its children under folderGroupIdentifier
+        outlineView.removeItems(at: IndexSet(integer: index), inParent: folderGroupIdentifier, withAnimation: .effectFade)
+
+        DispatchQueue.main.async { [weak self] in
+            self?.isPerformingLocalTreeUpdate = false
+        }
     }
 
     @objc private func contextRemoveRecent(_ sender: Any? = nil) {
@@ -1066,6 +1102,7 @@ private final class SidebarRowCellView: NSTableCellView {
         title: String,
         isDirectory: Bool,
         isSelected: Bool,
+        url: URL? = nil,
         isWebDAVRoot: Bool = false,
         syncStatus: FolderSyncStatus = .synced
     ) {
@@ -1078,6 +1115,26 @@ private final class SidebarRowCellView: NSTableCellView {
                 iconImageView.toolTip = "WebDAV 同步文件夹"
             } else if isDirectory {
                 symbolName = "folder"
+                iconImageView.toolTip = nil
+            } else if let url = url {
+                let type = SupportedFileType.detect(url: url)
+                switch type {
+                case .markdown:
+                    symbolName = "doc.text"
+                case .html:
+                    symbolName = "globe"
+                case .text:
+                    symbolName = "doc.plaintext"
+                case .image:
+                    symbolName = "photo"
+                case .other:
+                    let ext = url.pathExtension.lowercased()
+                    if ["webm", "mp4", "mov", "mkv", "avi", "m4v", "ts"].contains(ext) {
+                        symbolName = "film"
+                    } else {
+                        symbolName = "doc"
+                    }
+                }
                 iconImageView.toolTip = nil
             } else {
                 symbolName = "doc.text"

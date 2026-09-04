@@ -167,6 +167,11 @@ final class TopToolbarView: NSView {
             .sink { [weak self] _ in self?.updateStats() }
             .store(in: &cancellables)
 
+        document.$fileType
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.updateUI() }
+            .store(in: &cancellables)
+
         state.$editMode
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.updateModeButton() }
@@ -178,7 +183,7 @@ final class TopToolbarView: NSView {
             pathControl.url = url
             pathControl.isHidden = false
             titleLabel.isHidden = true
-            modeButton.isHidden = false
+            modeButton.isHidden = (document.fileType != .markdown && document.fileType != .html)
             statsLabel.isHidden = false
         } else {
             titleLabel.stringValue = "未命名"
@@ -192,26 +197,47 @@ final class TopToolbarView: NSView {
     }
 
     private func updateModeButton() {
+        guard document.fileType == .markdown || document.fileType == .html else {
+            modeButton.isHidden = true
+            return
+        }
+        modeButton.isHidden = false
         if #available(macOS 11.0, *) {
-            if state.editMode == .wysiwyg {
-                modeButton.image = NSImage(systemSymbolName: "doc.richtext", accessibilityDescription: nil)
-                modeButton.toolTip = "所见即所得模式"
+            if document.fileType == .html {
+                if state.editMode == .wysiwyg {
+                    modeButton.image = NSImage(systemSymbolName: "globe", accessibilityDescription: nil)
+                    modeButton.toolTip = "网页预览模式"
+                } else {
+                    modeButton.image = NSImage(systemSymbolName: "chevron.left.forwardslash.chevron.right", accessibilityDescription: nil) ?? NSImage(systemSymbolName: "pencil", accessibilityDescription: nil)
+                    modeButton.toolTip = "源码编辑模式"
+                }
             } else {
-                modeButton.image = NSImage(systemSymbolName: "pencil", accessibilityDescription: nil)
-                modeButton.toolTip = "文本编辑模式"
+                if state.editMode == .wysiwyg {
+                    modeButton.image = NSImage(systemSymbolName: "doc.richtext", accessibilityDescription: nil)
+                    modeButton.toolTip = "所见即所得模式"
+                } else {
+                    modeButton.image = NSImage(systemSymbolName: "pencil", accessibilityDescription: nil)
+                    modeButton.toolTip = "文本编辑模式"
+                }
             }
         }
     }
 
     private func updateStats() {
-        guard document.url != nil else {
+        guard let url = document.url else {
             statsLabel.stringValue = ""
             return
         }
-        let text = document.text
-        let lines = max(text.split(whereSeparator: \.isNewline).count, text.isEmpty ? 0 : 1)
-        let characters = document.plainText.filter { !$0.isWhitespace && !$0.isNewline }.count
-        statsLabel.stringValue = "\(lines) 行 · \(characters) 字"
+        switch document.fileType {
+        case .markdown, .text, .html:
+            let text = document.text
+            let lines = max(text.split(whereSeparator: \.isNewline).count, text.isEmpty ? 0 : 1)
+            let characters = document.plainText.filter { !$0.isWhitespace && !$0.isNewline }.count
+            statsLabel.stringValue = "\(lines) 行 · \(characters) 字"
+        case .image, .other:
+            let sizeStr = SupportedFileType.formattedFileSize(for: url)
+            statsLabel.stringValue = sizeStr
+        }
     }
 
     @objc private func handleToggleSidebar() {
