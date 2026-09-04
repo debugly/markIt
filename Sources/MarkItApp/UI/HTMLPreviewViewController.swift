@@ -15,6 +15,11 @@ final class HTMLPreviewViewController: NSViewController, WKNavigationDelegate {
 
     override func loadView() {
         let configuration = WKWebViewConfiguration()
+        let preferences = WKWebpagePreferences()
+        preferences.allowsContentJavaScript = true
+        configuration.defaultWebpagePreferences = preferences
+        configuration.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
+        configuration.setValue(true, forKey: "allowUniversalAccessFromFileURLs")
         // 直接使用原生 webview，不增加任何额外的 js 和样式注入
         webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = self

@@ -72,6 +72,12 @@ final class WYSIWYGWebViewController: NSViewController, WKNavigationDelegate, WK
         let config = WKWebViewConfiguration()
         config.userContentController = contentController
 
+        let preferences = WKWebpagePreferences()
+        preferences.allowsContentJavaScript = true
+        config.defaultWebpagePreferences = preferences
+        config.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
+        config.setValue(true, forKey: "allowUniversalAccessFromFileURLs")
+
         webView = InspectableWKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = self
         webView.setValue(false, forKey: "drawsBackground")
@@ -92,18 +98,15 @@ final class WYSIWYGWebViewController: NSViewController, WKNavigationDelegate, WK
         #if compiler(>=5.8)
         if #available(macOS 13.3, *) {
             webView.isInspectable = state.isWebViewInspectEnabled
+            return
         }
         #endif
+        webView.configuration.preferences.setValue(state.isWebViewInspectEnabled, forKey: "developerExtrasEnabled")
     }
 
     private func loadHTML() {
         let htmlTemplate = getEditorHTMLTemplate()
-        let baseURL: URL?
-        if #available(macOS 13.0, *) {
-            baseURL = Bundle.main.bundleURL
-        } else {
-            baseURL = URL(string: "https://markit.local/")
-        }
+        let baseURL = Bundle.main.resourceURL ?? Bundle.main.bundleURL
         webView.loadHTMLString(htmlTemplate, baseURL: baseURL)
     }
 
@@ -316,21 +319,20 @@ private final class InspectableWKWebView: WKWebView {
 }
 
 private func loadTiptapBundle() -> String {
-    if let url = Bundle.main.url(forResource: "tiptap-bundle", withExtension: "js") {
-        if let content = try? String(contentsOf: url, encoding: .utf8) {
+    let candidateURLs: [URL?] = [
+        Bundle.main.url(forResource: "tiptap-bundle", withExtension: "js"),
+        Bundle.main.url(forResource: "tiptap-bundle", withExtension: "js", subdirectory: "JS"),
+        Bundle.main.url(forResource: "tiptap-bundle", withExtension: "js", subdirectory: "Resources/JS"),
+        Bundle.main.resourceURL?.appendingPathComponent("tiptap-bundle.js"),
+        Bundle.main.resourceURL?.appendingPathComponent("JS/tiptap-bundle.js"),
+        Bundle.main.resourceURL?.appendingPathComponent("Resources/JS/tiptap-bundle.js")
+    ]
+    for candidate in candidateURLs {
+        if let url = candidate, let content = try? String(contentsOf: url, encoding: .utf8), !content.isEmpty {
             return content
         }
     }
-    if let url = Bundle.main.url(forResource: "tiptap-bundle", withExtension: "js", subdirectory: "JS") {
-        if let content = try? String(contentsOf: url, encoding: .utf8) {
-            return content
-        }
-    }
-    if let url = Bundle.main.url(forResource: "tiptap-bundle", withExtension: "js", subdirectory: "Resources/JS") {
-        if let content = try? String(contentsOf: url, encoding: .utf8) {
-            return content
-        }
-    }
+    NSLog("❌ [MarkIt] Failed to locate or read tiptap-bundle.js in Bundle.main")
     return ""
 }
 
@@ -536,37 +538,30 @@ private func getEditorHTMLTemplate() -> String {
             <div id="editor"></div>
         </div>
 
-        <script type="module">
-            let Tiptap = window.Tiptap;
-            if (!Tiptap) {
-                console.warn("Local Tiptap bundle not found. Falling back to esm.sh CDN...");
-                try {
-                    const [core, starterKit, markdown, heading, table] = await Promise.all([
-                        import('https://esm.sh/@tiptap/core@3'),
-                        import('https://esm.sh/@tiptap/starter-kit@3?deps=@tiptap/core@3'),
-                        import('https://esm.sh/@tiptap/markdown@3?deps=@tiptap/core@3'),
-                        import('https://esm.sh/@tiptap/extension-heading@3?deps=@tiptap/core@3'),
-                        import('https://esm.sh/@tiptap/extension-table@3?deps=@tiptap/core@3')
-                    ]);
-                    Tiptap = {
-                        Editor: core.Editor,
-                        mergeAttributes: core.mergeAttributes,
-                        StarterKit: starterKit.default,
-                        Markdown: markdown.Markdown,
-                        Heading: heading.default,
-                        TableKit: table.TableKit
-                    };
-                } catch (err) {
-                    const errorDiv = document.createElement('div');
+        <script>
+            (function() {
+                var Tiptap = window.Tiptap;
+                if (!Tiptap) {
+                    var errorMsg = "Local Tiptap bundle not found.";
+                    console.error(errorMsg);
+                    try {
+                        window.webkit.messageHandlers.jsError.postMessage({
+                            message: errorMsg,
+                            source: "WYSIWYGTemplate",
+                            lineno: 0,
+                            colno: 0,
+                            error: ""
+                        });
+                    } catch(e) {}
+                    var errorDiv = document.createElement('div');
                     errorDiv.style.color = 'red';
                     errorDiv.style.padding = '20px';
-                    errorDiv.innerText = 'Failed to load Tiptap editor: ' + err.message;
+                    errorDiv.innerText = 'Failed to load Tiptap editor: ' + errorMsg;
                     document.body.appendChild(errorDiv);
-                    throw err;
+                    return;
                 }
-            }
 
-            const { Editor, mergeAttributes, StarterKit, Markdown, Heading, TableKit } = Tiptap;
+                const { Editor, mergeAttributes, StarterKit, Markdown, Heading, TableKit } = Tiptap;
 
             let isUpdatingFromSwift = false;
 
@@ -1142,6 +1137,7 @@ private func getEditorHTMLTemplate() -> String {
             }, true);
 
             window.webkit.messageHandlers.editorReady.postMessage({});
+        })();
         </script>
     </body>
     </html>
