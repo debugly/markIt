@@ -15,6 +15,7 @@ final class AppState: ObservableObject {
     }
     @Published var showUnsavedAlert = false
     @Published var isTransitioning = false
+    @Published var isRestoringLastOpenedFile = false
 
     enum EditMode {
         case wysiwyg
@@ -731,6 +732,13 @@ final class AppState: ObservableObject {
         guard document.url == nil else { 
             print("[MarkIt Log] restoreLastOpenedFile: Skipped because document.url is already non-nil.")
             return 
+        }
+
+        isRestoringLastOpenedFile = true
+        defer {
+            DispatchQueue.main.async { [weak self] in
+                self?.isRestoringLastOpenedFile = false
+            }
         }
 
         if let bookmarkData = defaults.data(forKey: lastOpenedFileBookmarkKey) {

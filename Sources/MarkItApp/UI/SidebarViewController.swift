@@ -28,13 +28,12 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     private var isRecentGroupExpanded = true
     private var isFolderGroupExpanded = true
     private var isPerformingLocalTreeUpdate = false
-    private var isInitialLaunch = true
 
     private enum SelectionSource {
         case folderTree
         case recentFiles
     }
-    private var selectionSource: SelectionSource = .folderTree
+    private var selectionSource: SelectionSource = .recentFiles
     private var lastClickedSidebarURL: URL?
 
     private func isURLInTree(_ url: URL) -> Bool {
@@ -122,9 +121,6 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         super.viewDidLoad()
         bindState()
         reloadDataAndExpand()
-        DispatchQueue.main.async { [weak self] in
-            self?.isInitialLaunch = false
-        }
     }
 
     override func viewWillAppear() {
@@ -231,7 +227,11 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
                 if let lastClicked = self.lastClickedSidebarURL, lastClicked == url {
                     self.lastClickedSidebarURL = nil
                 } else if let url = url {
-                    self.selectionSource = self.isURLInTree(url) ? .folderTree : .recentFiles
+                    if self.state.isRestoringLastOpenedFile {
+                        self.selectionSource = .recentFiles
+                    } else {
+                        self.selectionSource = self.isURLInTree(url) ? .folderTree : .recentFiles
+                    }
                 }
                 self.syncSelection(url)
             }
@@ -306,8 +306,8 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         // 3. Restore all previously expanded folders
         restoreExpandedItems(for: state.tree)
 
-        // 4. Ensure current selection's ancestors are expanded (skip on initial startup so folders remain collapsed)
-        if !isInitialLaunch, selectionSource != .recentFiles, let currentURL = state.selection {
+        // 4. Ensure current selection's ancestors are expanded
+        if selectionSource != .recentFiles, let currentURL = state.selection {
             expandAncestors(of: currentURL, in: state.tree)
         }
 
@@ -368,9 +368,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             return
         }
 
-        if !isInitialLaunch {
-            expandAncestors(of: stdURL, in: state.tree)
-        }
+        expandAncestors(of: stdURL, in: state.tree)
 
         // Prioritize selecting the FileNode in the folder tree so the user stays oriented in their directory structure
         var treeRow: Int? = nil

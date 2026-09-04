@@ -232,7 +232,7 @@ final class ImagePreviewViewController: NSViewController, WKNavigationDelegate {
               display: flex;
               align-items: center;
               justify-content: center;
-              max-width: 90%;
+              max-width: 100%;
               max-height: calc(100% - 56px);
             }
             img {
