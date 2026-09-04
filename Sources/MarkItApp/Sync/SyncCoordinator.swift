@@ -18,7 +18,14 @@ public final class SyncCoordinator: ObservableObject, @unchecked Sendable {
     @Published public private(set) var syncStatuses: [URL: FolderSyncStatus] = [:]
 
     private var autoSyncTimers: [UUID: DispatchWorkItem] = [:]
+    private let syncTaskLock = NSLock()
     private var activeSyncTasks: [UUID: Task<Void, Never>] = [:]
+
+    private func withSyncLock<T>(_ body: () -> T) -> T {
+        syncTaskLock.lock()
+        defer { syncTaskLock.unlock() }
+        return body()
+    }
 
     private init() {
         loadConfigs()
@@ -102,8 +109,10 @@ public final class SyncCoordinator: ObservableObject, @unchecked Sendable {
         configs.removeAll { $0.id == id }
         autoSyncTimers[id]?.cancel()
         autoSyncTimers.removeValue(forKey: id)
-        activeSyncTasks[id]?.cancel()
-        activeSyncTasks.removeValue(forKey: id)
+        withSyncLock {
+            activeSyncTasks[id]?.cancel()
+            _ = activeSyncTasks.removeValue(forKey: id)
+        }
         saveConfigs()
 
         // Clean up manifest and pending deletions
@@ -338,81 +347,114 @@ public final class SyncCoordinator: ObservableObject, @unchecked Sendable {
             return
         }
 
-        // Avoid concurrent sync on same folder
-        if let existingTask = activeSyncTasks[configId], !existingTask.isCancelled {
-            return
-        }
-
         let serverURL = cfg.serverURL
         let username = cfg.username
         let remotePath = cfg.remotePath
         let lastSync = cfg.lastSyncTime ?? Date.distantPast
-
         let rootKey = localRoot.standardizedFileURL
-        let task = Task {
-            DispatchQueue.main.async { [weak self] in
-                self?.syncStatuses[rootKey] = .syncing(message: "正在同步...")
+
+        // Safely check and register running sync task
+        let (task, isNew) = withSyncLock { () -> (Task<Void, Never>, Bool) in
+            if let existing = activeSyncTasks[configId] {
+                return (existing, false)
             }
-
-            let client = WebDAVClient(baseURL: serverURL, username: username, password: password)
-
-            do {
-                print("[SyncCoordinator] 开始同步 '\(localRoot.path)' <-> '\(remotePath)'")
-                // 1. Ensure remote root folder exists
-                try await client.ensureDirectoryHierarchy(remotePath: remotePath)
-
-                // 2. Perform two-way sync with manifest and deletion tracking
-                let previousManifest = self.loadManifest(for: configId)
-                var pendingDeletions = self.loadPendingDeletions(for: configId)
-                var newManifest: [String: SyncManifestEntry] = [:]
-
-                try await performDirectorySync(
-                    client: client,
+            let newTask = Task { [weak self] in
+                defer {
+                    self?.withSyncLock {
+                        _ = self?.activeSyncTasks.removeValue(forKey: configId)
+                    }
+                }
+                guard let self = self else { return }
+                await self.performSyncTask(
                     configId: configId,
-                    localDirectory: localRoot,
+                    localRoot: localRoot,
+                    rootKey: rootKey,
+                    serverURL: serverURL,
+                    username: username,
+                    password: password,
                     remotePath: remotePath,
-                    relativeDirPath: "",
-                    lastSyncTime: lastSync,
-                    previousManifest: previousManifest,
-                    pendingDeletions: &pendingDeletions,
-                    newManifest: &newManifest
+                    lastSync: lastSync
                 )
-
-                // Save manifest and pending deletions
-                self.saveManifest(newManifest, for: configId)
-                self.savePendingDeletions(pendingDeletions, for: configId)
-
-                // 3. Complete
-                let now = Date()
-                print("[SyncCoordinator] 同步成功完成: '\(localRoot.path)'")
-                DispatchQueue.main.async { [weak self] in
-                    guard let self = self else { return }
-                    if let idx = self.configs.firstIndex(where: { $0.id == configId }) {
-                        self.configs[idx].lastSyncTime = now
-                        self.saveConfigs()
-                    }
-                    var newStatuses = self.syncStatuses
-                    let rootPath = localRoot.standardizedFileURL.path
-                    newStatuses = newStatuses.filter { (key, _) in
-                        !key.standardizedFileURL.path.hasPrefix(rootPath) || key == rootKey
-                    }
-                    newStatuses[rootKey] = .synced
-                    self.syncStatuses = newStatuses
-                    NotificationCenter.default.post(name: Notification.Name("WebDAVSyncDidComplete"), object: nil)
-                }
-            } catch {
-                let errMsg = error.localizedDescription
-                print("[SyncCoordinator Error] 文件夹同步失败 '\(localRoot.path)': \(errMsg) (\(error))")
-                DispatchQueue.main.async { [weak self] in
-                    self?.syncStatuses[rootKey] = .error(message: errMsg)
-                }
             }
-
-            self.activeSyncTasks.removeValue(forKey: configId)
+            activeSyncTasks[configId] = newTask
+            return (newTask, true)
         }
 
-        activeSyncTasks[configId] = task
+        if !isNew {
+            await task.value
+            return
+        }
+
         await task.value
+    }
+
+    private func performSyncTask(
+        configId: UUID,
+        localRoot: URL,
+        rootKey: URL,
+        serverURL: URL,
+        username: String,
+        password: String,
+        remotePath: String,
+        lastSync: Date
+    ) async {
+        DispatchQueue.main.async { [weak self] in
+            self?.syncStatuses[rootKey] = .syncing(message: "正在同步...")
+        }
+
+        let client = WebDAVClient(baseURL: serverURL, username: username, password: password)
+
+        do {
+            print("[SyncCoordinator] 开始同步 '\(localRoot.path)' <-> '\(remotePath)'")
+            // 1. Ensure remote root folder exists
+            try await client.ensureDirectoryHierarchy(remotePath: remotePath)
+
+            // 2. Perform two-way sync with manifest and deletion tracking
+            let previousManifest = self.loadManifest(for: configId)
+            var pendingDeletions = self.loadPendingDeletions(for: configId)
+            var newManifest: [String: SyncManifestEntry] = [:]
+
+            try await performDirectorySync(
+                client: client,
+                configId: configId,
+                localDirectory: localRoot,
+                remotePath: remotePath,
+                relativeDirPath: "",
+                lastSyncTime: lastSync,
+                previousManifest: previousManifest,
+                pendingDeletions: &pendingDeletions,
+                newManifest: &newManifest
+            )
+
+            // Save manifest and pending deletions
+            self.saveManifest(newManifest, for: configId)
+            self.savePendingDeletions(pendingDeletions, for: configId)
+
+            // 3. Complete
+            let now = Date()
+            print("[SyncCoordinator] 同步成功完成: '\(localRoot.path)'")
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                if let idx = self.configs.firstIndex(where: { $0.id == configId }) {
+                    self.configs[idx].lastSyncTime = now
+                    self.saveConfigs()
+                }
+                var newStatuses = self.syncStatuses
+                let rootPath = localRoot.standardizedFileURL.path
+                newStatuses = newStatuses.filter { (key, _) in
+                    !key.standardizedFileURL.path.hasPrefix(rootPath) || key == rootKey
+                }
+                newStatuses[rootKey] = .synced
+                self.syncStatuses = newStatuses
+                NotificationCenter.default.post(name: Notification.Name("WebDAVSyncDidComplete"), object: nil)
+            }
+        } catch {
+            let errMsg = error.localizedDescription
+            print("[SyncCoordinator Error] 文件夹同步失败 '\(localRoot.path)': \(errMsg) (\(error))")
+            DispatchQueue.main.async { [weak self] in
+                self?.syncStatuses[rootKey] = .error(message: errMsg)
+            }
+        }
     }
 
     private func performDirectorySync(
