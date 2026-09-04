@@ -78,6 +78,9 @@ final class AppState: ObservableObject {
         restoreWebViewInspectEnabled()
         rebuildTree()
         setupDocumentObserver()
+        NotificationCenter.default.addObserver(forName: Notification.Name("WebDAVSyncDidComplete"), object: nil, queue: .main) { [weak self] _ in
+            self?.refresh()
+        }
     }
 
     private func restoreRecentFiles() {
@@ -140,10 +143,14 @@ final class AppState: ObservableObject {
         if storeBookmark {
             persistBookmark(for: url)
         }
+        rebuildTree()
     }
 
     func removeRootFolder(_ url: URL) {
         endAccessingRootFolder(url)
+        if let cfg = SyncCoordinator.shared.rootConfig(for: url) {
+            SyncCoordinator.shared.removeConfig(id: cfg.id)
+        }
         rootFolders.removeAll { $0 == url }
         rebuildTree()
         saveBookmarks()
@@ -259,6 +266,7 @@ final class AppState: ObservableObject {
         let target = uniqueURL(for: parent.appendingPathComponent(trimmed, isDirectory: true))
         do {
             try fileManager.createDirectory(at: target, withIntermediateDirectories: true)
+            SyncCoordinator.shared.markModified(fileOrFolderURL: target)
             refresh()
         } catch {
             return
@@ -271,6 +279,7 @@ final class AppState: ObservableObject {
         let target = uniqueURL(for: parent.appendingPathComponent(trimmed, isDirectory: false))
         let created = fileManager.createFile(atPath: target.path, contents: Data())
         if created {
+            SyncCoordinator.shared.markModified(fileOrFolderURL: target)
             document.open(url: target)
             refresh()
         }
@@ -281,7 +290,10 @@ final class AppState: ObservableObject {
         guard trimmed.isEmpty == false else { return }
         let target = url.deletingLastPathComponent().appendingPathComponent(trimmed, isDirectory: url.hasDirectoryPath)
         guard target != url else { return }
-        _ = relocateItem(at: url, to: target)
+        if relocateItem(at: url, to: target) {
+            SyncCoordinator.shared.recordDeletion(fileOrFolderURL: url)
+            SyncCoordinator.shared.markModified(fileOrFolderURL: target)
+        }
     }
 
     func duplicateFile(at url: URL, newName: String) {
@@ -290,6 +302,7 @@ final class AppState: ObservableObject {
         let target = uniqueURL(for: url.deletingLastPathComponent().appendingPathComponent(trimmed, isDirectory: false))
         do {
             try fileManager.copyItem(at: url, to: target)
+            SyncCoordinator.shared.markModified(fileOrFolderURL: target)
             refresh()
             selection = target
             if requestSwitch(to: target) {
@@ -302,8 +315,9 @@ final class AppState: ObservableObject {
 
     func deleteItem(at url: URL) {
         do {
+            SyncCoordinator.shared.recordDeletion(fileOrFolderURL: url)
             try fileManager.removeItem(at: url)
-            if document.url == url {
+            if let docURL = document.url, docURL == url || docURL.path.hasPrefix(url.path + "/") {
                 document.clear()
             }
             refresh()
@@ -346,7 +360,12 @@ final class AppState: ObservableObject {
         }
 
         let targetURL = destinationDirectory.appendingPathComponent(sourceURL.lastPathComponent, isDirectory: sourceURL.hasDirectoryPath)
-        return relocateItem(at: sourceURL, to: targetURL)
+        let success = relocateItem(at: sourceURL, to: targetURL)
+        if success {
+            SyncCoordinator.shared.recordDeletion(fileOrFolderURL: sourceURL)
+            SyncCoordinator.shared.markModified(fileOrFolderURL: targetURL)
+        }
+        return success
     }
 
     func requestSwitch(to url: URL) -> Bool {

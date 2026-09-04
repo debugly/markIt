@@ -9,7 +9,7 @@ import AppKit
 import WebKit
 import Combine
 
-final class WYSIWYGWebViewController: NSViewController, WKNavigationDelegate, WKScriptMessageHandler {
+final class WYSIWYGWebViewController: NSViewController, WKNavigationDelegate, WKScriptMessageHandler, NSMenuItemValidation {
     private let document: DocumentModel
     private let state: AppState
     private var cancellables = Set<AnyCancellable>()
@@ -234,9 +234,59 @@ final class WYSIWYGWebViewController: NSViewController, WKNavigationDelegate, WK
             break
         }
     }
+
+    // MARK: - Undo / Redo
+
+    @objc func undo(_ sender: Any?) {
+        webView.evaluateJavaScript("if (window.editorUndo) { window.editorUndo(); }", completionHandler: nil)
+    }
+
+    @objc func redo(_ sender: Any?) {
+        webView.evaluateJavaScript("if (window.editorRedo) { window.editorRedo(); }", completionHandler: nil)
+    }
+
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(UndoRedoActions.undo(_:)) || menuItem.action == #selector(UndoRedoActions.redo(_:)) {
+            return true
+        }
+        return true
+    }
 }
 
 private final class InspectableWKWebView: WKWebView {
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
+        if flags == [.command] && key == "z" {
+            undo(nil)
+            return true
+        }
+        if flags == [.command, .shift] && key == "z" {
+            redo(nil)
+            return true
+        }
+        if flags == [.command] && key == "y" {
+            redo(nil)
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
+    @objc func undo(_ sender: Any?) {
+        evaluateJavaScript("if (window.editorUndo) { window.editorUndo(); }", completionHandler: nil)
+    }
+
+    @objc func redo(_ sender: Any?) {
+        evaluateJavaScript("if (window.editorRedo) { window.editorRedo(); }", completionHandler: nil)
+    }
+
+    override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+        if item.action == #selector(UndoRedoActions.undo(_:)) || item.action == #selector(UndoRedoActions.redo(_:)) {
+            return true
+        }
+        return super.validateUserInterfaceItem(item)
+    }
+
     override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
         super.willOpenMenu(menu, with: event)
         #if compiler(>=5.8)
@@ -627,6 +677,7 @@ private func getEditorHTMLTemplate() -> String {
                     }
                 }
             });
+            window.editor = editor;
 
             // --- SLASH / BACKSLASH COMMAND MENU SYSTEM ---
             const slashStyle = document.createElement('style');
@@ -998,6 +1049,61 @@ private func getEditorHTMLTemplate() -> String {
                     tags: e.target.value
                 });
             });
+
+            window.editorUndo = function() {
+                const activeEl = document.activeElement;
+                if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
+                    document.execCommand('undo');
+                    return true;
+                }
+                if (window.editor && window.editor.can().undo()) {
+                    window.editor.chain().focus().undo().run();
+                    return true;
+                }
+                return false;
+            };
+
+            window.editorRedo = function() {
+                const activeEl = document.activeElement;
+                if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
+                    document.execCommand('redo');
+                    return true;
+                }
+                if (window.editor && window.editor.can().redo()) {
+                    window.editor.chain().focus().redo().run();
+                    return true;
+                }
+                return false;
+            };
+
+            window.addEventListener('keydown', function(event) {
+                if ((event.metaKey || event.ctrlKey) && (event.key === 'z' || event.key === 'Z')) {
+                    const activeEl = document.activeElement;
+                    if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
+                        return;
+                    }
+                    if (event.shiftKey) {
+                        if (window.editorRedo && window.editorRedo()) {
+                            event.preventDefault();
+                            event.stopPropagation();
+                        }
+                    } else {
+                        if (window.editorUndo && window.editorUndo()) {
+                            event.preventDefault();
+                            event.stopPropagation();
+                        }
+                    }
+                } else if ((event.metaKey || event.ctrlKey) && (event.key === 'y' || event.key === 'Y')) {
+                    const activeEl = document.activeElement;
+                    if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
+                        return;
+                    }
+                    if (window.editorRedo && window.editorRedo()) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                    }
+                }
+            }, true);
 
             window.webkit.messageHandlers.editorReady.postMessage({});
         </script>

@@ -372,6 +372,7 @@ final class DocumentModel: ObservableObject {
         do {
             try text.write(to: url, atomically: true, encoding: .utf8)
             isDirty = false
+            SyncCoordinator.shared.markModified(fileOrFolderURL: url)
             return true
         } catch {
             return false

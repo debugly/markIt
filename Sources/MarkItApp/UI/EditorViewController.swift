@@ -8,7 +8,7 @@
 import AppKit
 import Combine
 
-final class EditorViewController: NSViewController {
+final class EditorViewController: NSViewController, NSMenuItemValidation {
     private let state: AppState
     private let document: DocumentModel
     private var cancellables = Set<AnyCancellable>()
@@ -123,5 +123,32 @@ final class EditorViewController: NSViewController {
             wysiwygVC.view.isHidden = true
             sourceVC.view.isHidden = false
         }
+    }
+
+    // MARK: - Undo / Redo
+
+    @objc func undo(_ sender: Any?) {
+        switch state.editMode {
+        case .wysiwyg:
+            wysiwygVC.undo(sender)
+        case .source:
+            sourceVC.undo(sender)
+        }
+    }
+
+    @objc func redo(_ sender: Any?) {
+        switch state.editMode {
+        case .wysiwyg:
+            wysiwygVC.redo(sender)
+        case .source:
+            sourceVC.redo(sender)
+        }
+    }
+
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(UndoRedoActions.undo(_:)) || menuItem.action == #selector(UndoRedoActions.redo(_:)) {
+            return true
+        }
+        return true
     }
 }

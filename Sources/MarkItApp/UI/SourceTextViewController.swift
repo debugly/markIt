@@ -8,7 +8,7 @@
 import AppKit
 import Combine
 
-final class SourceTextViewController: NSViewController, NSTextViewDelegate {
+final class SourceTextViewController: NSViewController, NSTextViewDelegate, NSMenuItemValidation {
     private let document: DocumentModel
     private var cancellables = Set<AnyCancellable>()
     private var isUpdatingFromSelf = false
@@ -90,6 +90,7 @@ final class SourceTextViewController: NSViewController, NSTextViewDelegate {
     private func syncTextFromDocument() {
         guard let customTextView = scrollView.documentView as? NSTextView else { return }
         customTextView.string = document.text
+        customTextView.undoManager?.removeAllActions()
     }
 
     private func handleExternalTextChange(_ newText: String) {
@@ -114,5 +115,35 @@ final class SourceTextViewController: NSViewController, NSTextViewDelegate {
         isUpdatingFromSelf = true
         document.updateText(customTextView.string)
         isUpdatingFromSelf = false
+    }
+
+    // MARK: - Undo / Redo
+
+    @objc func undo(_ sender: Any?) {
+        if let customTextView = scrollView.documentView as? NSTextView {
+            customTextView.undoManager?.undo()
+        }
+    }
+
+    @objc func redo(_ sender: Any?) {
+        if let customTextView = scrollView.documentView as? NSTextView {
+            customTextView.undoManager?.redo()
+        }
+    }
+
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(UndoRedoActions.undo(_:)) {
+            if let customTextView = scrollView.documentView as? NSTextView {
+                return customTextView.undoManager?.canUndo ?? false
+            }
+            return false
+        }
+        if menuItem.action == #selector(UndoRedoActions.redo(_:)) {
+            if let customTextView = scrollView.documentView as? NSTextView {
+                return customTextView.undoManager?.canRedo ?? false
+            }
+            return false
+        }
+        return true
     }
 }

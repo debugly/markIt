@@ -18,6 +18,14 @@ struct FileNode: Identifiable, Hashable {
     var id: URL { url }
     var name: String { url.lastPathComponent }
     var displayName: String { frontMatter?.title ?? name }
+
+    static func == (lhs: FileNode, rhs: FileNode) -> Bool {
+        lhs.url == rhs.url
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(url)
+    }
 }
 
 enum FileNodeBuilder {

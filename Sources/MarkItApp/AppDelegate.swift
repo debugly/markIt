@@ -8,6 +8,11 @@
 import AppKit
 import Combine
 
+@objc protocol UndoRedoActions {
+    func undo(_ sender: Any?)
+    func redo(_ sender: Any?)
+}
+
 @main
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private static var sharedDelegate: AppDelegate?
@@ -42,6 +47,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
         handleLaunchFile()
         observeRecentFiles()
+        SyncCoordinator.shared.syncAll()
         print("[MarkIt Log] applicationDidFinishLaunching finished, window is visible: \(mainWindowController.window?.isVisible ?? false)")
     }
 
@@ -134,6 +140,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         let openFolderItem = fileMenu.addItem(withTitle: "打开文件夹...", action: #selector(menuOpenFolder), keyEquivalent: "o")
         openFolderItem.keyEquivalentModifierMask = [.command, .shift]
 
+        fileMenu.addItem(withTitle: "添加 WebDAV 文件夹...", action: #selector(menuAddWebDAVFolder), keyEquivalent: "")
+        let syncAllItem = fileMenu.addItem(withTitle: "立即同步全部 WebDAV", action: #selector(menuSyncAllWebDAV), keyEquivalent: "s")
+        syncAllItem.keyEquivalentModifierMask = [.command, .shift]
+
         fileMenu.addItem(NSMenuItem.separator())
 
         let exportHTMLItem = fileMenu.addItem(withTitle: "导出 HTML...", action: #selector(menuExportHTML), keyEquivalent: "e")
@@ -157,8 +167,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // 3. Edit Menu
         let editMenuItem = NSMenuItem()
         let editMenu = NSMenu(title: "编辑")
-        editMenu.addItem(withTitle: "撤销", action: #selector(UndoManager.undo), keyEquivalent: "z")
-        let redoItem = editMenu.addItem(withTitle: "重做", action: #selector(UndoManager.redo), keyEquivalent: "z")
+        editMenu.addItem(withTitle: "撤销", action: #selector(UndoRedoActions.undo(_:)), keyEquivalent: "z")
+        let redoItem = editMenu.addItem(withTitle: "重做", action: #selector(UndoRedoActions.redo(_:)), keyEquivalent: "z")
         redoItem.keyEquivalentModifierMask = [.command, .shift]
         editMenu.addItem(NSMenuItem.separator())
         editMenu.addItem(withTitle: "剪切", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
@@ -265,6 +275,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     @objc private func menuOpenFolder() {
         appState.promptOpenFolder()
+    }
+
+    private var webdavDialog: WebDAVSetupDialog?
+
+    @objc private func menuAddWebDAVFolder() {
+        let dialog = WebDAVSetupDialog(state: appState)
+        self.webdavDialog = dialog
+        dialog.showWindow(nil)
+        dialog.window?.makeKeyAndOrderFront(nil)
+    }
+
+    @objc private func menuSyncAllWebDAV() {
+        SyncCoordinator.shared.syncAll()
     }
 
     @objc private func menuExportHTML() {
