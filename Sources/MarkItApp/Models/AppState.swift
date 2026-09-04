@@ -166,8 +166,10 @@ final class AppState: ObservableObject {
     func openFile(_ url: URL) {
         guard canOpenFile(url) else { return }
         let fileType = SupportedFileType.detect(url: url)
-        if fileType == .text || fileType == .html {
+        if fileType == .text {
             editMode = .source
+        } else if fileType == .html {
+            editMode = .wysiwyg
         }
         addToRecentFiles(url)
         selection = url
