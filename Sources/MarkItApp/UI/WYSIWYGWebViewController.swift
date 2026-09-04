@@ -590,6 +590,22 @@ private func getEditorHTMLTemplate() -> String {
                 }
             });
 
+            function containsMarkdownTable(text) {
+                if (!text || typeof text !== 'string') return false;
+                const lines = text.trim().split(/\\r?\\n/);
+                if (lines.length < 2) return false;
+                const delimiterPattern = /^\\s*\\|?(\\s*:?-+:?\\s*\\|)+\\s*:?-+:?\\s*\\|?\\s*$|^\\s*\\|\\s*:?-+:?\\s*\\|\\s*$/;
+                for (let i = 1; i < lines.length; i++) {
+                    if (delimiterPattern.test(lines[i])) {
+                        const prevLine = lines[i - 1].trim();
+                        if (prevLine.includes('|')) {
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            }
+
             const editor = new Editor({
                 element: document.querySelector('#editor'),
                 extensions: [
@@ -619,6 +635,26 @@ private func getEditorHTMLTemplate() -> String {
                 ],
                 content: '',
                 contentType: 'markdown',
+                editorProps: {
+                    handlePaste(view, event, slice) {
+                        if (event.target && (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA')) {
+                            return false;
+                        }
+                        if (editor.isActive('codeBlock') || editor.isActive('table')) {
+                            return false;
+                        }
+                        const html = event.clipboardData?.getData('text/html');
+                        if (html && /<table[\\s>]/i.test(html)) {
+                            return false;
+                        }
+                        const text = event.clipboardData?.getData('text/plain');
+                        if (text && containsMarkdownTable(text)) {
+                            editor.commands.insertContent(text.trim(), { contentType: 'markdown' });
+                            return true;
+                        }
+                        return false;
+                    }
+                },
                 onUpdate({ editor }) {
                     if (isUpdatingFromSwift) return;
                     const markdown = editor.getMarkdown();
