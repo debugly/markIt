@@ -70,9 +70,6 @@ final class WebDAVSetupDialog: NSWindowController {
             if let latest = SyncCoordinator.shared.configs.last {
                 urlField.stringValue = latest.serverURL.absoluteString
                 usernameField.stringValue = latest.username
-                if let pwd = SyncCoordinator.shared.password(for: latest.id) {
-                    passwordField.stringValue = pwd
-                }
             }
         }
     }
@@ -105,9 +102,6 @@ final class WebDAVSetupDialog: NSWindowController {
         usernameField.placeholderString = "your-username"
         passwordField.placeholderString = "密码 / 令牌"
         remotePathField.placeholderString = "例如：/共享文件夹/MarkItNotes"
-        if existingConfig == nil && remotePathField.stringValue.isEmpty {
-            remotePathField.stringValue = "/MarkItNotes"
-        }
         localPathField.placeholderString = "请选择本地用于同步的文件夹"
         localPathField.isEditable = false
 
@@ -237,14 +231,6 @@ final class WebDAVSetupDialog: NSWindowController {
             confirmButton.widthAnchor.constraint(equalToConstant: 100)
         ])
 
-        // Default local folder suggestion: ~/Documents/MarkItNotes
-        if selectedLocalURL == nil && existingConfig == nil {
-            if let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
-                let defaultFolder = docs.appendingPathComponent("MarkItNotes")
-                selectedLocalURL = defaultFolder
-                localPathField.stringValue = defaultFolder.path
-            }
-        }
     }
 
     private func recommendRemotePath(for localURL: URL) {
@@ -275,7 +261,6 @@ final class WebDAVSetupDialog: NSWindowController {
             guard let self = self, response == .OK, let url = panel.url else { return }
             self.selectedLocalURL = url
             self.localPathField.stringValue = url.path
-            self.recommendRemotePath(for: url)
         }
     }
 
@@ -341,7 +326,15 @@ final class WebDAVSetupDialog: NSWindowController {
 
         let username = usernameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         let password = passwordField.stringValue
-        let remotePath = remotePathField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        var remotePath = remotePathField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !remotePath.isEmpty else {
+            testStatusLabel.textColor = .systemRed
+            testStatusLabel.stringValue = "请指定云端目录路径"
+            return
+        }
+        if !remotePath.hasPrefix("/") {
+            remotePath = "/" + remotePath
+        }
 
         // Ensure local directory exists
         try? FileManager.default.createDirectory(at: localURL, withIntermediateDirectories: true, attributes: nil)

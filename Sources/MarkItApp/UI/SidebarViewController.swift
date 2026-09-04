@@ -164,17 +164,6 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         bottomDivider.translatesAutoresizingMaskIntoConstraints = false
         bottomDivider.boxType = .separator
 
-        let addWebDAVButton = NSButton()
-        addWebDAVButton.translatesAutoresizingMaskIntoConstraints = false
-        addWebDAVButton.bezelStyle = .regularSquare
-        addWebDAVButton.isBordered = false
-        if #available(macOS 11.0, *) {
-            addWebDAVButton.image = NSImage(systemSymbolName: "icloud.badge.plus", accessibilityDescription: "添加 WebDAV 文件夹")
-        }
-        addWebDAVButton.toolTip = "添加 WebDAV 同步文件夹"
-        addWebDAVButton.target = self
-        addWebDAVButton.action = #selector(handleAddWebDAVFolder)
-
         let settingsButton = NSButton()
         settingsButton.translatesAutoresizingMaskIntoConstraints = false
         settingsButton.bezelStyle = .regularSquare
@@ -197,21 +186,10 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         styleButton.target = self
         styleButton.action = #selector(handleStylePicker(_:))
 
-        let separator = NSBox()
-        separator.translatesAutoresizingMaskIntoConstraints = false
-        separator.boxType = .separator
-
-        bottomBar.addSubview(addWebDAVButton)
-        bottomBar.addSubview(separator)
         bottomBar.addSubview(settingsButton)
         bottomBar.addSubview(styleButton)
 
         NSLayoutConstraint.activate([
-            addWebDAVButton.leadingAnchor.constraint(equalTo: bottomBar.leadingAnchor, constant: 10),
-            addWebDAVButton.centerYAnchor.constraint(equalTo: bottomBar.centerYAnchor),
-            addWebDAVButton.widthAnchor.constraint(equalToConstant: 24),
-            addWebDAVButton.heightAnchor.constraint(equalToConstant: 24),
-
             styleButton.trailingAnchor.constraint(equalTo: bottomBar.trailingAnchor, constant: -10),
             styleButton.centerYAnchor.constraint(equalTo: bottomBar.centerYAnchor),
             styleButton.widthAnchor.constraint(equalToConstant: 24),
@@ -220,12 +198,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             settingsButton.trailingAnchor.constraint(equalTo: styleButton.leadingAnchor, constant: -6),
             settingsButton.centerYAnchor.constraint(equalTo: bottomBar.centerYAnchor),
             settingsButton.widthAnchor.constraint(equalToConstant: 24),
-            settingsButton.heightAnchor.constraint(equalToConstant: 24),
-
-            separator.trailingAnchor.constraint(equalTo: settingsButton.leadingAnchor, constant: -6),
-            separator.centerYAnchor.constraint(equalTo: bottomBar.centerYAnchor),
-            separator.heightAnchor.constraint(equalToConstant: 16),
-            separator.widthAnchor.constraint(equalToConstant: 1)
+            settingsButton.heightAnchor.constraint(equalToConstant: 24)
         ])
     }
 
