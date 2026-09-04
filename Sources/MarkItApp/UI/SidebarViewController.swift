@@ -355,6 +355,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
                     outlineView.expandItem(item)
                     expandedFolderURLs.insert(node.url)
                 }
+                syncSelection(state.selection)
             } else {
                 state.openFile(node.url)
             }
@@ -498,6 +499,11 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             rowView = SidebarTableRowView()
             rowView?.identifier = rowId
         }
+        if let node = item as? FileNode {
+            rowView?.isDirectory = node.isDirectory
+        } else {
+            rowView?.isDirectory = false
+        }
         return rowView
     }
 
@@ -556,7 +562,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         if let node = item as? FileNode {
             let isWebDAV = SyncCoordinator.shared.rootConfig(for: node.url) != nil
             let syncStatus = SyncCoordinator.shared.syncStatus(for: node.url)
-            let isSelected = (state.selection == node.url) || (outlineView.selectedRow >= 0 && (outlineView.item(atRow: outlineView.selectedRow) as? FileNode)?.url == node.url)
+            let isSelected = !node.isDirectory && ((state.selection == node.url) || (outlineView.selectedRow >= 0 && (outlineView.item(atRow: outlineView.selectedRow) as? FileNode)?.url == node.url))
             cellView?.configure(
                 title: node.displayName,
                 isDirectory: node.isDirectory,
@@ -579,7 +585,20 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     }
 
     func outlineView(_ outlineView: NSOutlineView, shouldSelectItem item: Any) -> Bool {
-        return !(item is String)
+        if item is String { return false }
+        if let node = item as? FileNode, node.isDirectory { return false }
+        return true
+    }
+
+    func outlineView(_ outlineView: NSOutlineView, selectionIndexesForProposedSelection proposedSelectionIndexes: IndexSet) -> IndexSet {
+        var validIndexes = IndexSet()
+        for idx in proposedSelectionIndexes {
+            guard let item = outlineView.item(atRow: idx) else { continue }
+            if item is String { continue }
+            if let node = item as? FileNode, node.isDirectory { continue }
+            validIndexes.insert(idx)
+        }
+        return validIndexes.isEmpty ? outlineView.selectedRowIndexes : validIndexes
     }
 
     func outlineViewItemDidExpand(_ notification: Notification) {
@@ -701,81 +720,108 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
 extension SidebarViewController: NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
-        let clickedRow = outlineView.clickedRow >= 0 ? outlineView.clickedRow : outlineView.selectedRow
+        let rightRow = outlineView.rightClickedRow
+        let clickedRow = rightRow >= 0 ? rightRow : (outlineView.clickedRow >= 0 ? outlineView.clickedRow : -1)
 
         guard clickedRow >= 0, let item = outlineView.item(atRow: clickedRow) else {
+            lastClickedNodeURL = nil
             menu.addItem(withTitle: "打开本地文件夹...", action: #selector(contextOpenFolder), keyEquivalent: "")
             menu.addItem(withTitle: "添加 WebDAV 同步文件夹...", action: #selector(handleAddWebDAVFolder), keyEquivalent: "")
             return
         }
 
+        let targetURL: URL?
         if let node = item as? FileNode {
+            targetURL = node.url
             lastClickedNodeURL = node.url
         } else if let url = item as? URL {
+            targetURL = url
             lastClickedNodeURL = url
+        } else {
+            targetURL = nil
+            lastClickedNodeURL = nil
+        }
+
+        func addItem(title: String, action: Selector, keyEquivalent: String = "") {
+            let mi = menu.addItem(withTitle: title, action: action, keyEquivalent: keyEquivalent)
+            mi.representedObject = targetURL
         }
 
         if let str = item as? String, str == folderGroupIdentifier {
-            menu.addItem(withTitle: "打开本地文件夹...", action: #selector(contextOpenFolder), keyEquivalent: "")
-            menu.addItem(withTitle: "添加 WebDAV 同步文件夹...", action: #selector(handleAddWebDAVFolder), keyEquivalent: "")
+            addItem(title: "打开本地文件夹...", action: #selector(contextOpenFolder))
+            addItem(title: "添加 WebDAV 同步文件夹...", action: #selector(handleAddWebDAVFolder))
             if !SyncCoordinator.shared.configs.isEmpty {
                 menu.addItem(NSMenuItem.separator())
-                menu.addItem(withTitle: "立即同步全部 WebDAV", action: #selector(contextSyncAll), keyEquivalent: "")
+                addItem(title: "立即同步全部 WebDAV", action: #selector(contextSyncAll))
             }
             return
         }
 
         if let node = item as? FileNode {
             if node.isDirectory {
+                let isRootFolder = state.rootFolders.contains { $0.standardizedFileURL == node.url.standardizedFileURL }
                 if SyncCoordinator.shared.config(for: node.url) != nil {
-                    menu.addItem(withTitle: "立即同步", action: #selector(contextSyncNow), keyEquivalent: "")
+                    addItem(title: "立即同步", action: #selector(contextSyncNow))
                     if SyncCoordinator.shared.rootConfig(for: node.url) != nil {
-                        menu.addItem(withTitle: "WebDAV 设置...", action: #selector(contextEditWebDAV), keyEquivalent: "")
-                        menu.addItem(withTitle: "取消 WebDAV 同步", action: #selector(contextUnlinkWebDAV), keyEquivalent: "")
+                        addItem(title: "WebDAV 设置...", action: #selector(contextEditWebDAV))
+                        addItem(title: "取消 WebDAV 同步", action: #selector(contextUnlinkWebDAV))
                     }
                     menu.addItem(NSMenuItem.separator())
+                } else if isRootFolder {
+                    addItem(title: "配置 WebDAV", action: #selector(contextConfigureWebDAV))
+                    menu.addItem(NSMenuItem.separator())
                 }
-                menu.addItem(withTitle: "新增文件夹", action: #selector(contextNewFolder), keyEquivalent: "")
-                menu.addItem(withTitle: "新增文件", action: #selector(contextNewFile), keyEquivalent: "")
-                menu.addItem(withTitle: "修改文件夹名", action: #selector(contextRename), keyEquivalent: "")
+                addItem(title: "新增文件夹", action: #selector(contextNewFolder))
+                addItem(title: "新增文件", action: #selector(contextNewFile))
+                addItem(title: "修改文件夹名", action: #selector(contextRename))
                 menu.addItem(NSMenuItem.separator())
-                menu.addItem(withTitle: "刷新", action: #selector(contextRefresh), keyEquivalent: "")
-                let isRootFolder = state.rootFolders.contains { $0.standardizedFileURL == node.url.standardizedFileURL }
+                addItem(title: "刷新", action: #selector(contextRefresh))
                 if isRootFolder {
-                    menu.addItem(withTitle: "移除书签", action: #selector(contextRemoveRoot), keyEquivalent: "")
+                    addItem(title: "移除书签", action: #selector(contextRemoveRoot))
                 } else {
-                    menu.addItem(withTitle: "删除", action: #selector(contextDelete), keyEquivalent: "")
+                    addItem(title: "删除", action: #selector(contextDelete))
                 }
-                menu.addItem(withTitle: "在 Finder 中显示", action: #selector(contextRevealInFinder), keyEquivalent: "")
+                addItem(title: "在 Finder 中显示", action: #selector(contextRevealInFinder))
             } else {
-                menu.addItem(withTitle: "修改文件名", action: #selector(contextRename), keyEquivalent: "")
-                menu.addItem(withTitle: "创建副本", action: #selector(contextDuplicate), keyEquivalent: "")
+                addItem(title: "修改文件名", action: #selector(contextRename))
+                addItem(title: "创建副本", action: #selector(contextDuplicate))
                 menu.addItem(NSMenuItem.separator())
-                menu.addItem(withTitle: "刷新", action: #selector(contextRefresh), keyEquivalent: "")
-                menu.addItem(withTitle: "删除", action: #selector(contextDelete), keyEquivalent: "")
-                menu.addItem(withTitle: "在 Finder 中显示", action: #selector(contextRevealInFinder), keyEquivalent: "")
+                addItem(title: "刷新", action: #selector(contextRefresh))
+                addItem(title: "删除", action: #selector(contextDelete))
+                addItem(title: "在 Finder 中显示", action: #selector(contextRevealInFinder))
             }
         } else if item is URL {
-            menu.addItem(withTitle: "移除记录", action: #selector(contextRemoveRecent), keyEquivalent: "")
-            menu.addItem(withTitle: "在 Finder 中显示", action: #selector(contextRevealInFinder), keyEquivalent: "")
+            addItem(title: "移除记录", action: #selector(contextRemoveRecent))
+            addItem(title: "在 Finder 中显示", action: #selector(contextRevealInFinder))
         }
     }
 
+    private func targetURL(from sender: Any?) -> URL? {
+        if let menuItem = sender as? NSMenuItem, let url = menuItem.representedObject as? URL {
+            return url
+        }
+        return targetURLFromClickedRow
+    }
+
     private var targetURLFromClickedRow: URL? {
-        let row = outlineView.clickedRow >= 0 ? outlineView.clickedRow : outlineView.selectedRow
+        if let last = lastClickedNodeURL {
+            return last
+        }
+        let rightRow = outlineView.rightClickedRow
+        let row = rightRow >= 0 ? rightRow : (outlineView.clickedRow >= 0 ? outlineView.clickedRow : outlineView.selectedRow)
         if row >= 0, let item = outlineView.item(atRow: row) {
             if let node = item as? FileNode { return node.url }
             if let url = item as? URL { return url }
         }
-        return lastClickedNodeURL
+        return nil
     }
 
     @objc private func contextOpenFolder() {
         state.promptOpenFolder()
     }
 
-    @objc private func contextNewFolder() {
-        guard let url = targetURLFromClickedRow else { return }
+    @objc private func contextNewFolder(_ sender: Any? = nil) {
+        guard let url = targetURL(from: sender) else { return }
         let parentDir = url.hasDirectoryPath ? url : url.deletingLastPathComponent()
         NamePromptDialog.show(context: .newFolder(parent: parentDir), on: view.window) { [weak self] name in
             guard let name = name else { return }
@@ -784,8 +830,8 @@ extension SidebarViewController: NSMenuDelegate {
         }
     }
 
-    @objc private func contextNewFile() {
-        guard let url = targetURLFromClickedRow else { return }
+    @objc private func contextNewFile(_ sender: Any? = nil) {
+        guard let url = targetURL(from: sender) else { return }
         let parentDir = url.hasDirectoryPath ? url : url.deletingLastPathComponent()
         NamePromptDialog.show(context: .newFile(parent: parentDir), on: view.window) { [weak self] name in
             guard let name = name else { return }
@@ -794,16 +840,16 @@ extension SidebarViewController: NSMenuDelegate {
         }
     }
 
-    @objc private func contextRename() {
-        guard let url = targetURLFromClickedRow else { return }
+    @objc private func contextRename(_ sender: Any? = nil) {
+        guard let url = targetURL(from: sender) else { return }
         NamePromptDialog.show(context: .rename(target: url), on: view.window) { [weak self] name in
             guard let name = name else { return }
             self?.state.renameItem(at: url, to: name)
         }
     }
 
-    @objc private func contextDuplicate() {
-        guard let url = targetURLFromClickedRow else { return }
+    @objc private func contextDuplicate(_ sender: Any? = nil) {
+        guard let url = targetURL(from: sender) else { return }
         NamePromptDialog.show(context: .duplicate(target: url), on: view.window) { [weak self] name in
             guard let name = name else { return }
             self?.state.duplicateFile(at: url, newName: name)
@@ -814,23 +860,23 @@ extension SidebarViewController: NSMenuDelegate {
         state.refresh()
     }
 
-    @objc private func contextRemoveRoot() {
-        guard let url = targetURLFromClickedRow else { return }
+    @objc private func contextRemoveRoot(_ sender: Any? = nil) {
+        guard let url = targetURL(from: sender) else { return }
         state.removeRootFolder(url)
     }
 
-    @objc private func contextRemoveRecent() {
-        guard let url = targetURLFromClickedRow else { return }
+    @objc private func contextRemoveRecent(_ sender: Any? = nil) {
+        guard let url = targetURL(from: sender) else { return }
         state.removeRecentFile(url)
     }
 
-    @objc private func contextDelete() {
-        guard let url = targetURLFromClickedRow else { return }
+    @objc private func contextDelete(_ sender: Any? = nil) {
+        guard let url = targetURL(from: sender) else { return }
         showDeleteConfirmation(for: url)
     }
 
-    @objc private func contextRevealInFinder() {
-        guard let url = targetURLFromClickedRow else { return }
+    @objc private func contextRevealInFinder(_ sender: Any? = nil) {
+        guard let url = targetURL(from: sender) else { return }
         state.revealInFinder(url)
     }
 
@@ -841,8 +887,8 @@ extension SidebarViewController: NSMenuDelegate {
         dialog.window?.makeKeyAndOrderFront(nil)
     }
 
-    @objc private func contextSyncNow() {
-        guard let url = targetURLFromClickedRow else { return }
+    @objc private func contextSyncNow(_ sender: Any? = nil) {
+        guard let url = targetURL(from: sender) else { return }
         Task {
             await SyncCoordinator.shared.syncFolder(url: url)
         }
@@ -852,17 +898,25 @@ extension SidebarViewController: NSMenuDelegate {
         SyncCoordinator.shared.syncAll()
     }
 
-    @objc private func contextUnlinkWebDAV() {
-        guard let url = targetURLFromClickedRow,
+    @objc private func contextUnlinkWebDAV(_ sender: Any? = nil) {
+        guard let url = targetURL(from: sender),
               let cfg = SyncCoordinator.shared.rootConfig(for: url) else { return }
         SyncCoordinator.shared.removeConfig(id: cfg.id)
         outlineView.reloadData()
     }
 
-    @objc private func contextEditWebDAV() {
-        guard let url = targetURLFromClickedRow,
+    @objc private func contextEditWebDAV(_ sender: Any? = nil) {
+        guard let url = targetURL(from: sender),
               let cfg = SyncCoordinator.shared.rootConfig(for: url) ?? SyncCoordinator.shared.config(for: url) else { return }
         let dialog = WebDAVSetupDialog(state: state, existingConfig: cfg)
+        self.webdavDialog = dialog
+        dialog.showWindow(nil)
+        dialog.window?.makeKeyAndOrderFront(nil)
+    }
+
+    @objc private func contextConfigureWebDAV(_ sender: Any? = nil) {
+        guard let url = targetURL(from: sender) else { return }
+        let dialog = WebDAVSetupDialog(state: state, preselectedLocalURL: url)
         self.webdavDialog = dialog
         dialog.showWindow(nil)
         dialog.window?.makeKeyAndOrderFront(nil)
@@ -948,7 +1002,7 @@ private final class SidebarRowCellView: NSTableCellView {
                 symbolName = "doc.text"
                 iconImageView.toolTip = nil
             }
-            iconImageView.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: isWebDAV ? "WebDAV 同步文件夹" : nil)
+            iconImageView.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)
         }
 
         if isWebDAV {
@@ -1139,6 +1193,31 @@ final class SidebarHeaderCellView: NSTableCellView {
 }
 
 final class SidebarTableRowView: NSTableRowView {
+    var isDirectory: Bool = false {
+        didSet {
+            if oldValue != isDirectory {
+                needsDisplay = true
+            }
+        }
+    }
+
+    override var selectionHighlightStyle: NSTableView.SelectionHighlightStyle {
+        get {
+            if isDirectory { return .none }
+            return super.selectionHighlightStyle
+        }
+        set {
+            super.selectionHighlightStyle = newValue
+        }
+    }
+
+    override func drawSelection(in dirtyRect: NSRect) {
+        if isDirectory {
+            return
+        }
+        super.drawSelection(in: dirtyRect)
+    }
+
     override func didAddSubview(_ subview: NSView) {
         super.didAddSubview(subview)
         hideBuiltinGroupDisclosure(subview)
@@ -1182,6 +1261,14 @@ final class SidebarTableRowView: NSTableRowView {
 }
 
 final class SidebarOutlineView: NSOutlineView {
+    private(set) var rightClickedRow: Int = -1
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let point = convert(event.locationInWindow, from: nil)
+        rightClickedRow = row(at: point)
+        return super.menu(for: event)
+    }
+
     override func makeView(withIdentifier identifier: NSUserInterfaceItemIdentifier, owner: Any?) -> NSView? {
         if identifier == NSOutlineView.showHideButtonIdentifier ||
            identifier.rawValue == "NSOutlineViewShowHideButtonKey" {
@@ -1198,6 +1285,22 @@ final class SidebarOutlineView: NSOutlineView {
             return super.frameOfOutlineCell(atRow: row)
         }
         return .zero
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        let clickedRow = row(at: point)
+        if clickedRow >= 0, let item = item(atRow: clickedRow) {
+            if let node = item as? FileNode, node.isDirectory {
+                if isItemExpanded(item) {
+                    collapseItem(item)
+                } else {
+                    expandItem(item)
+                }
+                return
+            }
+        }
+        super.mouseDown(with: event)
     }
 }
 

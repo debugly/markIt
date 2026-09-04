@@ -194,11 +194,11 @@ final class TopToolbarView: NSView {
     private func updateModeButton() {
         if #available(macOS 11.0, *) {
             if state.editMode == .wysiwyg {
-                modeButton.image = NSImage(systemSymbolName: "doc.richtext", accessibilityDescription: "源码编辑")
-                modeButton.toolTip = "切换到源码编辑"
+                modeButton.image = NSImage(systemSymbolName: "doc.richtext", accessibilityDescription: nil)
+                modeButton.toolTip = "所见即所得模式"
             } else {
-                modeButton.image = NSImage(systemSymbolName: "pencil", accessibilityDescription: "所见即所得编辑")
-                modeButton.toolTip = "切换到所见即所得编辑"
+                modeButton.image = NSImage(systemSymbolName: "pencil", accessibilityDescription: nil)
+                modeButton.toolTip = "文本编辑模式"
             }
         }
     }

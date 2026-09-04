@@ -25,9 +25,10 @@ final class WebDAVSetupDialog: NSWindowController {
     private var selectedLocalURL: URL?
     private let existingConfig: WebDAVFolderConfig?
 
-    init(state: AppState, existingConfig: WebDAVFolderConfig? = nil) {
+    init(state: AppState, existingConfig: WebDAVFolderConfig? = nil, preselectedLocalURL: URL? = nil) {
         self.state = state
         self.existingConfig = existingConfig
+        self.selectedLocalURL = preselectedLocalURL
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 480, height: 420),
@@ -35,7 +36,7 @@ final class WebDAVSetupDialog: NSWindowController {
             backing: .buffered,
             defer: false
         )
-        window.title = existingConfig == nil ? "添加 WebDAV 同步文件夹" : "编辑 WebDAV 设置"
+        window.title = existingConfig == nil ? (preselectedLocalURL == nil ? "添加 WebDAV 同步文件夹" : "配置 WebDAV") : "编辑 WebDAV 设置"
         window.center()
         super.init(window: window)
 
@@ -48,18 +49,31 @@ final class WebDAVSetupDialog: NSWindowController {
     }
 
     private func populateExistingConfig() {
-        guard let config = existingConfig else { return }
-        urlField.stringValue = config.serverURL.absoluteString
-        usernameField.stringValue = config.username
-        if let pwd = SyncCoordinator.shared.password(for: config.id) {
-            passwordField.stringValue = pwd
-        }
-        remotePathField.stringValue = config.remotePath
-        localPathField.stringValue = config.localPath
-        if let resolved = config.resolveLocalURL() {
-            selectedLocalURL = resolved
+        if let config = existingConfig {
+            urlField.stringValue = config.serverURL.absoluteString
+            usernameField.stringValue = config.username
+            if let pwd = SyncCoordinator.shared.password(for: config.id) {
+                passwordField.stringValue = pwd
+            }
+            remotePathField.stringValue = config.remotePath
+            localPathField.stringValue = config.localPath
+            if let resolved = config.resolveLocalURL() {
+                selectedLocalURL = resolved
+            } else {
+                selectedLocalURL = URL(fileURLWithPath: config.localPath)
+            }
         } else {
-            selectedLocalURL = URL(fileURLWithPath: config.localPath)
+            if let local = selectedLocalURL {
+                localPathField.stringValue = local.path
+                recommendRemotePath(for: local)
+            }
+            if let latest = SyncCoordinator.shared.configs.last {
+                urlField.stringValue = latest.serverURL.absoluteString
+                usernameField.stringValue = latest.username
+                if let pwd = SyncCoordinator.shared.password(for: latest.id) {
+                    passwordField.stringValue = pwd
+                }
+            }
         }
     }
 
@@ -224,10 +238,19 @@ final class WebDAVSetupDialog: NSWindowController {
         ])
 
         // Default local folder suggestion: ~/Documents/MarkItNotes
-        if let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
-            let defaultFolder = docs.appendingPathComponent("MarkItNotes")
-            selectedLocalURL = defaultFolder
-            localPathField.stringValue = defaultFolder.path
+        if selectedLocalURL == nil && existingConfig == nil {
+            if let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+                let defaultFolder = docs.appendingPathComponent("MarkItNotes")
+                selectedLocalURL = defaultFolder
+                localPathField.stringValue = defaultFolder.path
+            }
+        }
+    }
+
+    private func recommendRemotePath(for localURL: URL) {
+        let name = localURL.lastPathComponent
+        if !name.isEmpty && name != "/" {
+            remotePathField.stringValue = "/\(name)"
         }
     }
 
@@ -248,10 +271,11 @@ final class WebDAVSetupDialog: NSWindowController {
         panel.allowsMultipleSelection = false
         panel.prompt = "选择同步文件夹"
 
-        panel.beginSheetModal(for: window!) { response in
-            guard response == .OK, let url = panel.url else { return }
+        panel.beginSheetModal(for: window!) { [weak self] response in
+            guard let self = self, response == .OK, let url = panel.url else { return }
             self.selectedLocalURL = url
             self.localPathField.stringValue = url.path
+            self.recommendRemotePath(for: url)
         }
     }
 
