@@ -389,7 +389,14 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             }
         }
 
-        let targetRow = treeRow ?? recentRow
+        let targetRow: Int?
+        if selectionSource == .folderTree {
+            // 当来源是文件夹树时，严格只在文件夹树中匹配行；如果文件在树中已不存在，绝不能 fallback 到最近打开列表中
+            targetRow = treeRow
+        } else {
+            targetRow = treeRow ?? recentRow
+        }
+
         if let row = targetRow {
             outlineView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
             outlineView.scrollRowToVisible(row)
@@ -745,12 +752,18 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             alert.beginSheetModal(for: window) { [weak self] response in
                 if response == .alertFirstButtonReturn {
                     self?.expandedFolderURLs = self?.expandedFolderURLs.filter { !$0.path.hasPrefix(url.path) } ?? []
+                    if let sel = self?.state.selection, sel == url || sel.path.hasPrefix(url.path + "/") {
+                        self?.outlineView.deselectAll(nil)
+                    }
                     self?.state.deleteItem(at: url)
                 }
             }
         } else {
             if alert.runModal() == .alertFirstButtonReturn {
                 expandedFolderURLs = expandedFolderURLs.filter { !$0.path.hasPrefix(url.path) }
+                if let sel = state.selection, sel == url || sel.path.hasPrefix(url.path + "/") {
+                    outlineView.deselectAll(nil)
+                }
                 state.deleteItem(at: url)
             }
         }

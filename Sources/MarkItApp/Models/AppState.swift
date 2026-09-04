@@ -157,6 +157,12 @@ final class AppState: ObservableObject {
 
     func rebuildTree() {
         tree = rootFolders.map { FileNodeBuilder.buildTree(for: $0) }
+        if let sel = selection, !fileExists(at: sel) {
+            selection = nil
+            if let docURL = document.url, docURL == sel {
+                document.clear()
+            }
+        }
     }
 
     func refresh() {
@@ -330,9 +336,26 @@ final class AppState: ObservableObject {
         do {
             SyncCoordinator.shared.recordDeletion(fileOrFolderURL: url)
             try fileManager.removeItem(at: url)
-            if let docURL = document.url, docURL == url || docURL.path.hasPrefix(url.path + "/") {
+
+            let stdURL = url.standardizedFileURL
+            let isAffected: (URL) -> Bool = { target in
+                let targetStd = target.standardizedFileURL
+                return targetStd == stdURL || targetStd.path.hasPrefix(stdURL.path + "/")
+            }
+
+            if let docURL = document.url, isAffected(docURL) {
                 document.clear()
             }
+            if let sel = selection, isAffected(sel) {
+                selection = nil
+            }
+            if let last = lastSelectedFileURL, isAffected(last) {
+                lastSelectedFileURL = nil
+            }
+
+            recentFiles.removeAll { isAffected($0) }
+            saveRecentFiles()
+
             refresh()
         } catch {
             return
