@@ -411,12 +411,19 @@ final class DocumentModel: ObservableObject {
         guard isSettingInitialText == false else { return }
         guard let url = url else { return }
 
+        SyncCoordinator.shared.markModified(fileOrFolderURL: url)
+
         saveWorkItem?.cancel()
         
         let currentText = text
         let workItem = DispatchWorkItem { [weak self] in
-            try? currentText.write(to: url, atomically: true, encoding: .utf8)
-            self?.isDirty = false
+            do {
+                try currentText.write(to: url, atomically: true, encoding: .utf8)
+                self?.isDirty = false
+                SyncCoordinator.shared.markModified(fileOrFolderURL: url)
+            } catch {
+                print("Failed to auto-save file: \(error)")
+            }
         }
         saveWorkItem = workItem
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: workItem)

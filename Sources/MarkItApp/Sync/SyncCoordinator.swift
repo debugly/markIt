@@ -138,18 +138,21 @@ public final class SyncCoordinator: ObservableObject, @unchecked Sendable {
         return nil
     }
 
-    public func syncStatus(for folderURL: URL) -> FolderSyncStatus {
-        let stdURL = folderURL.standardizedFileURL
+    public func syncStatus(for url: URL, isDirectory: Bool = false) -> FolderSyncStatus {
+        let stdURL = url.standardizedFileURL
         for (key, status) in syncStatuses {
             if key.standardizedFileURL == stdURL || key.standardizedFileURL.path == stdURL.path {
                 return status
             }
         }
-        if let cfg = config(for: folderURL), let localRoot = cfg.resolveLocalURL() {
-            let rootStd = localRoot.standardizedFileURL
+        if isDirectory {
+            let dirPath = stdURL.path
             for (key, status) in syncStatuses {
-                if key.standardizedFileURL == rootStd || key.standardizedFileURL.path == rootStd.path {
-                    return status
+                let keyPath = key.standardizedFileURL.path
+                if keyPath == dirPath || keyPath.hasPrefix(dirPath + "/") {
+                    if status != .synced {
+                        return status
+                    }
                 }
             }
         }
@@ -275,6 +278,10 @@ public final class SyncCoordinator: ObservableObject, @unchecked Sendable {
 
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
+            let fileKey = fileOrFolderURL.standardizedFileURL
+            if self.syncStatuses[fileKey]?.isSyncing != true {
+                self.syncStatuses[fileKey] = .modified
+            }
             let rootKey = localRoot.standardizedFileURL
             if self.syncStatuses[rootKey]?.isSyncing != true {
                 self.syncStatuses[rootKey] = .modified
@@ -384,7 +391,13 @@ public final class SyncCoordinator: ObservableObject, @unchecked Sendable {
                         self.configs[idx].lastSyncTime = now
                         self.saveConfigs()
                     }
-                    self.syncStatuses[rootKey] = .synced
+                    var newStatuses = self.syncStatuses
+                    let rootPath = localRoot.standardizedFileURL.path
+                    newStatuses = newStatuses.filter { (key, _) in
+                        !key.standardizedFileURL.path.hasPrefix(rootPath) || key == rootKey
+                    }
+                    newStatuses[rootKey] = .synced
+                    self.syncStatuses = newStatuses
                     NotificationCenter.default.post(name: Notification.Name("WebDAVSyncDidComplete"), object: nil)
                 }
             } catch {
