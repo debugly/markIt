@@ -561,7 +561,7 @@ private func getEditorHTMLTemplate() -> String {
                     return;
                 }
 
-                const { Editor, mergeAttributes, StarterKit, Markdown, Heading, TableKit } = Tiptap;
+                const { Editor, mergeAttributes, StarterKit, Markdown, Heading, TableKit, TaskList, TaskItem } = Tiptap;
 
             let isUpdatingFromSwift = false;
 
@@ -609,6 +609,10 @@ private func getEditorHTMLTemplate() -> String {
                     }),
                     Markdown,
                     CustomHeading,
+                    TaskList,
+                    TaskItem.configure({
+                        nested: true
+                    }),
                     TableKit.configure({
                         table: {
                             resizable: true,
@@ -750,6 +754,17 @@ private func getEditorHTMLTemplate() -> String {
             let activeIndex = 0;
             let filteredItems = [...menuItems];
             let triggerPos = null;
+            let navigatingWithKeyboard = false;
+            let lastMouseX = -1;
+            let lastMouseY = -1;
+
+            window.addEventListener('mousemove', function(e) {
+                if (Math.abs(e.clientX - lastMouseX) > 2 || Math.abs(e.clientY - lastMouseY) > 2) {
+                    lastMouseX = e.clientX;
+                    lastMouseY = e.clientY;
+                    navigatingWithKeyboard = false;
+                }
+            }, { capture: true, passive: true });
 
             const slashMenu = document.createElement('div');
             slashMenu.id = 'slash-menu';
@@ -791,6 +806,40 @@ private func getEditorHTMLTemplate() -> String {
                 };
             }
 
+            function setActiveIndex(newIndex, scroll = true) {
+                if (filteredItems.length === 0) return;
+                activeIndex = (newIndex + filteredItems.length) % filteredItems.length;
+                const items = slashMenu.querySelectorAll('.slash-menu-item');
+                items.forEach((c, idx) => {
+                    if (idx === activeIndex) {
+                        c.classList.add('active');
+                    } else {
+                        c.classList.remove('active');
+                    }
+                });
+                if (scroll) {
+                    scrollActiveItemIntoView();
+                }
+            }
+
+            function scrollActiveItemIntoView() {
+                const items = slashMenu.querySelectorAll('.slash-menu-item');
+                const activeEl = items[activeIndex];
+                if (!activeEl) return;
+                
+                const menuTop = slashMenu.scrollTop;
+                const menuHeight = slashMenu.clientHeight;
+                const itemTop = activeEl.offsetTop;
+                const itemHeight = activeEl.offsetHeight;
+                const itemBottom = itemTop + itemHeight;
+                
+                if (itemTop < menuTop) {
+                    slashMenu.scrollTop = itemTop;
+                } else if (itemBottom > menuTop + menuHeight) {
+                    slashMenu.scrollTop = itemBottom - menuHeight;
+                }
+            }
+
             function renderSlashMenu() {
                 slashMenu.innerHTML = '';
                 if (filteredItems.length === 0) {
@@ -827,24 +876,20 @@ private func getEditorHTMLTemplate() -> String {
                     el.appendChild(titleEl);
 
                     el.addEventListener('mouseenter', () => {
-                        activeIndex = index;
-                        const children = slashMenu.querySelectorAll('.slash-menu-item');
-                        children.forEach((c, idx) => {
-                            if (idx === index) {
-                                c.classList.add('active');
-                            } else {
-                                c.classList.remove('active');
-                            }
-                        });
+                        if (navigatingWithKeyboard) return;
+                        setActiveIndex(index, false);
                     });
                     
                     el.addEventListener('mousedown', (e) => {
                         e.preventDefault();
+                        e.stopPropagation();
                         selectSlashItem(item);
                     });
 
                     slashMenu.appendChild(el);
                 });
+                
+                scrollActiveItemIntoView();
             }
 
             function selectSlashItem(item) {
@@ -870,12 +915,14 @@ private func getEditorHTMLTemplate() -> String {
 
             function openSlashMenu() {
                 slashMenuOpen = true;
+                navigatingWithKeyboard = false;
                 filteredItems = [...menuItems];
                 activeIndex = 0;
                 renderSlashMenu();
                 
                 slashMenu.style.visibility = 'hidden';
                 slashMenu.style.display = 'block';
+                slashMenu.scrollTop = 0;
                 
                 const menuWidth = slashMenu.offsetWidth || 200;
                 const menuHeight = slashMenu.offsetHeight || 240;
@@ -910,32 +957,28 @@ private func getEditorHTMLTemplate() -> String {
                 document.addEventListener('mousedown', clickOutsideHandler);
             }
 
-            function scrollActiveItemIntoView() {
-                const activeEl = slashMenu.querySelector('.slash-menu-item.active');
-                if (activeEl) {
-                    activeEl.scrollIntoView({ block: 'nearest' });
-                }
-            }
-
-            const editorEl = document.querySelector('#editor');
-            editorEl.addEventListener('keydown', function(event) {
+            window.addEventListener('keydown', function(event) {
                 if (slashMenuOpen) {
                     if (event.key === 'ArrowDown') {
                         event.preventDefault();
-                        activeIndex = (activeIndex + 1) % filteredItems.length;
-                        renderSlashMenu();
-                        scrollActiveItemIntoView();
+                        event.stopPropagation();
+                        event.stopImmediatePropagation();
+                        navigatingWithKeyboard = true;
+                        setActiveIndex(activeIndex + 1, true);
                         return;
                     }
                     if (event.key === 'ArrowUp') {
                         event.preventDefault();
-                        activeIndex = (activeIndex - 1 + filteredItems.length) % filteredItems.length;
-                        renderSlashMenu();
-                        scrollActiveItemIntoView();
+                        event.stopPropagation();
+                        event.stopImmediatePropagation();
+                        navigatingWithKeyboard = true;
+                        setActiveIndex(activeIndex - 1, true);
                         return;
                     }
-                    if (event.key === 'Enter') {
+                    if (event.key === 'Enter' || event.key === 'Tab') {
                         event.preventDefault();
+                        event.stopPropagation();
+                        event.stopImmediatePropagation();
                         if (filteredItems[activeIndex]) {
                             selectSlashItem(filteredItems[activeIndex]);
                         }
@@ -943,6 +986,8 @@ private func getEditorHTMLTemplate() -> String {
                     }
                     if (event.key === 'Escape') {
                         event.preventDefault();
+                        event.stopPropagation();
+                        event.stopImmediatePropagation();
                         closeSlashMenu("escapeKey");
                         return;
                     }
@@ -960,6 +1005,7 @@ private func getEditorHTMLTemplate() -> String {
 
             function closeSlashMenu(reason) {
                 slashMenuOpen = false;
+                navigatingWithKeyboard = false;
                 slashMenu.style.display = 'none';
                 document.removeEventListener('mousedown', clickOutsideHandler);
             }
