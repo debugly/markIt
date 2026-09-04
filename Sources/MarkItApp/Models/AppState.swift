@@ -333,10 +333,11 @@ final class AppState: ObservableObject {
         }
     }
 
-    func deleteItem(at url: URL) {
+    @discardableResult
+    func deleteItem(at url: URL) -> Bool {
         do {
+            try fileManager.trashItem(at: url, resultingItemURL: nil)
             SyncCoordinator.shared.recordDeletion(fileOrFolderURL: url)
-            try fileManager.removeItem(at: url)
 
             let stdURL = url.standardizedFileURL
             let isAffected: (URL) -> Bool = { target in
@@ -358,8 +359,18 @@ final class AppState: ObservableObject {
             saveRecentFiles()
 
             refresh()
+            return true
         } catch {
-            return
+            print("[AppState] 移动到废纸篓失败: \(error)")
+            DispatchQueue.main.async {
+                let alert = NSAlert()
+                alert.messageText = "无法将项目移到废纸篓"
+                alert.informativeText = "\(url.lastPathComponent)：\(error.localizedDescription)"
+                alert.alertStyle = .warning
+                alert.addButton(withTitle: "好")
+                alert.runModal()
+            }
+            return false
         }
     }
 

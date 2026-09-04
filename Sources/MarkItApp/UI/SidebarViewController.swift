@@ -681,6 +681,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     }
 
     func outlineViewSelectionDidChange(_ notification: Notification) {
+        lastClickedNodeURL = nil
         let selectedRow = outlineView.selectedRow
         if selectedRow >= 0, let item = outlineView.item(atRow: selectedRow) {
             if item is URL {
@@ -735,31 +736,33 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
 
         let alert = NSAlert()
-        alert.messageText = isDir.boolValue ? "确认删除该文件夹？" : "确认删除该文件？"
+        alert.messageText = isDir.boolValue ? "确认将该文件夹移到废纸篓？" : "确认将该文件移到废纸篓？"
         alert.informativeText = isDir.boolValue
-            ? "\(url.lastPathComponent)\n该文件夹及其包含的所有内容将被删除。"
-            : url.lastPathComponent
-        alert.alertStyle = .critical
-        alert.addButton(withTitle: "删除")
+            ? "\(url.lastPathComponent)\n该文件夹及其包含的所有内容将被移到废纸篓。"
+            : "\(url.lastPathComponent)\n该文件将被移到废纸篓。"
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "移到废纸篓")
         alert.addButton(withTitle: "取消")
 
+        let performDelete = { [weak self] in
+            guard let self = self else { return }
+            if self.state.deleteItem(at: url) {
+                self.expandedFolderURLs = self.expandedFolderURLs.filter { !$0.path.hasPrefix(url.path) }
+                if let sel = self.state.selection, sel == url || sel.path.hasPrefix(url.path + "/") {
+                    self.outlineView.deselectAll(nil)
+                }
+            }
+        }
+
         if let window = view.window {
-            alert.beginSheetModal(for: window) { [weak self] response in
+            alert.beginSheetModal(for: window) { response in
                 if response == .alertFirstButtonReturn {
-                    self?.expandedFolderURLs = self?.expandedFolderURLs.filter { !$0.path.hasPrefix(url.path) } ?? []
-                    if let sel = self?.state.selection, sel == url || sel.path.hasPrefix(url.path + "/") {
-                        self?.outlineView.deselectAll(nil)
-                    }
-                    self?.state.deleteItem(at: url)
+                    performDelete()
                 }
             }
         } else {
             if alert.runModal() == .alertFirstButtonReturn {
-                expandedFolderURLs = expandedFolderURLs.filter { !$0.path.hasPrefix(url.path) }
-                if let sel = state.selection, sel == url || sel.path.hasPrefix(url.path + "/") {
-                    outlineView.deselectAll(nil)
-                }
-                state.deleteItem(at: url)
+                performDelete()
             }
         }
     }
@@ -876,7 +879,7 @@ extension SidebarViewController: NSMenuDelegate {
                 if isRootFolder {
                     addItem(title: "移除书签", action: #selector(contextRemoveRoot))
                 } else {
-                    addItem(title: "删除", action: #selector(contextDelete))
+                    addItem(title: "移到废纸篓", action: #selector(contextDelete), keyEquivalent: "\u{08}")
                 }
                 addItem(title: "在 Finder 中显示", action: #selector(contextRevealInFinder))
             } else {
@@ -884,7 +887,7 @@ extension SidebarViewController: NSMenuDelegate {
                 addItem(title: "创建副本", action: #selector(contextDuplicate))
                 menu.addItem(NSMenuItem.separator())
                 addItem(title: "刷新", action: #selector(contextRefresh))
-                addItem(title: "删除", action: #selector(contextDelete))
+                addItem(title: "移到废纸篓", action: #selector(contextDelete), keyEquivalent: "\u{08}")
                 addItem(title: "在 Finder 中显示", action: #selector(contextRevealInFinder))
             }
         } else if item is URL {
@@ -997,6 +1000,17 @@ extension SidebarViewController: NSMenuDelegate {
     @objc private func contextDelete(_ sender: Any? = nil) {
         guard let url = targetURL(from: sender) else { return }
         showDeleteConfirmation(for: url)
+    }
+
+    func deleteSelectedItem() {
+        let row = outlineView.selectedRow
+        guard row >= 0, let item = outlineView.item(atRow: row) else { return }
+        if let node = item as? FileNode {
+            let isRoot = state.rootFolders.contains { $0.standardizedFileURL == node.url.standardizedFileURL }
+            if !isRoot {
+                showDeleteConfirmation(for: node.url)
+            }
+        }
     }
 
     @objc private func contextRevealInFinder(_ sender: Any? = nil) {
@@ -1439,6 +1453,17 @@ final class SidebarOutlineView: NSOutlineView {
             }
         }
         super.mouseDown(with: event)
+    }
+
+    override func keyDown(with event: NSEvent) {
+        let modifierFlags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if modifierFlags == .command && event.keyCode == 51 { // Cmd+Delete (Backspace)
+            if let controller = delegate as? SidebarViewController {
+                controller.deleteSelectedItem()
+                return
+            }
+        }
+        super.keyDown(with: event)
     }
 }
 

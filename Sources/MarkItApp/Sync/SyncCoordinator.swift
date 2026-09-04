@@ -562,8 +562,12 @@ public final class SyncCoordinator: ObservableObject, @unchecked Sendable {
                 // Exists ONLY locally
                 if wasInManifest {
                     // Existed previously, but now missing on remote -> Remote deleted it!
-                    print("[SyncCoordinator] 检测到云端已删除: '\(itemRelPath)'，同步删除本地对应项")
-                    try? fileManager.removeItem(at: local)
+                    print("[SyncCoordinator] 检测到云端已删除: '\(itemRelPath)'，同步移至废纸篓")
+                    do {
+                        try fileManager.trashItem(at: local, resultingItemURL: nil)
+                    } catch {
+                        try? fileManager.removeItem(at: local)
+                    }
                 } else {
                     // Newly created locally
                     let isDir = (try? local.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
