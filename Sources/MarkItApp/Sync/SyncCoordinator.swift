@@ -39,7 +39,16 @@ public final class SyncCoordinator: ObservableObject, @unchecked Sendable {
                     self.syncStatuses[localURL] = .synced
                 }
             }
+
+            // 启动后批量预加载所有配置的 WebDAV 密码到内存缓存，避免频繁解密
+            let accounts = decoded.map { $0.id.uuidString }
+            CredentialVault.preload(accounts: accounts)
         }
+    }
+
+    /// 获取对应 WebDAV 配置的密码（优先命中内存缓存）
+    public func password(for configId: UUID) -> String? {
+        CredentialVault.loadPassword(for: configId.uuidString)
     }
 
     private func saveConfigs() {
@@ -51,8 +60,8 @@ public final class SyncCoordinator: ObservableObject, @unchecked Sendable {
     // MARK: - Config Management
 
     public func addConfig(_ config: WebDAVFolderConfig, password: String) {
-        // Save password to Keychain securely
-        _ = KeychainHelper.savePassword(password, for: config.id.uuidString)
+        // 保存密码到基于硬件绑定的安全加密保险箱
+        _ = CredentialVault.savePassword(password, for: config.id.uuidString)
         configs.append(config)
         saveConfigs()
         if let localURL = config.resolveLocalURL()?.standardizedFileURL {
@@ -65,7 +74,7 @@ public final class SyncCoordinator: ObservableObject, @unchecked Sendable {
     }
 
     public func updateConfig(_ config: WebDAVFolderConfig, password: String) {
-        _ = KeychainHelper.savePassword(password, for: config.id.uuidString)
+        _ = CredentialVault.savePassword(password, for: config.id.uuidString)
         if let idx = configs.firstIndex(where: { $0.id == config.id }) {
             let oldLocal = configs[idx].resolveLocalURL()?.standardizedFileURL
             let newLocal = config.resolveLocalURL()?.standardizedFileURL
@@ -89,7 +98,7 @@ public final class SyncCoordinator: ObservableObject, @unchecked Sendable {
         if let cfg = configs.first(where: { $0.id == id }), let localURL = cfg.resolveLocalURL()?.standardizedFileURL {
             syncStatuses.removeValue(forKey: localURL)
         }
-        KeychainHelper.deletePassword(for: id.uuidString)
+        CredentialVault.deletePassword(for: id.uuidString)
         configs.removeAll { $0.id == id }
         autoSyncTimers[id]?.cancel()
         autoSyncTimers.removeValue(forKey: id)
@@ -239,7 +248,7 @@ public final class SyncCoordinator: ObservableObject, @unchecked Sendable {
         markModified(fileOrFolderURL: localRoot)
 
         // Immediately attempt remote deletion in background
-        if let password = KeychainHelper.loadPassword(for: cfg.id.uuidString) {
+        if let password = password(for: cfg.id) {
             let serverURL = cfg.serverURL
             let username = cfg.username
             let remoteRoot = cfg.remotePath.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
@@ -315,7 +324,7 @@ public final class SyncCoordinator: ObservableObject, @unchecked Sendable {
             return
         }
 
-        guard let password = KeychainHelper.loadPassword(for: cfg.id.uuidString) else {
+        guard let password = password(for: cfg.id) else {
             DispatchQueue.main.async { [weak self] in
                 self?.syncStatuses[localRoot] = .error(message: "密码缺失，请重新配置 WebDAV")
             }

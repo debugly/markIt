@@ -66,19 +66,20 @@ enum NamePromptDialog {
         alert.addButton(withTitle: context.confirmLabel)
         alert.addButton(withTitle: "取消")
 
-        let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
+        let textField = NamePromptTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
         textField.stringValue = context.initialValue
         textField.isEditable = true
         textField.isSelectable = true
+        if let dotIndex = context.initialValue.lastIndex(of: "."), dotIndex > context.initialValue.startIndex {
+            textField.selectWithoutExtension = true
+        }
         alert.accessoryView = textField
         alert.window.initialFirstResponder = textField
 
-        // If it's a file name, select just the name part without extension
-        if let dotIndex = context.initialValue.lastIndex(of: ".") {
-            let length = context.initialValue.distance(from: context.initialValue.startIndex, to: dotIndex)
-            textField.currentEditor()?.selectedRange = NSRange(location: 0, length: length)
-        } else {
-            textField.selectText(nil)
+        DispatchQueue.main.async {
+            if textField.stringValue == context.initialValue {
+                textField.applyExtensionSelectionIfNeeded()
+            }
         }
 
         let handleResponse: (NSApplication.ModalResponse) -> Void = { response in
@@ -96,5 +97,24 @@ enum NamePromptDialog {
             let response = alert.runModal()
             handleResponse(response)
         }
+    }
+}
+
+private final class NamePromptTextField: NSTextField {
+    var selectWithoutExtension: Bool = false
+
+    override func selectText(_ sender: Any?) {
+        super.selectText(sender)
+        applyExtensionSelectionIfNeeded()
+    }
+
+    func applyExtensionSelectionIfNeeded() {
+        guard selectWithoutExtension,
+              let dotIndex = stringValue.lastIndex(of: "."),
+              dotIndex > stringValue.startIndex else {
+            return
+        }
+        let range = NSRange(stringValue.startIndex..<dotIndex, in: stringValue)
+        currentEditor()?.selectedRange = range
     }
 }

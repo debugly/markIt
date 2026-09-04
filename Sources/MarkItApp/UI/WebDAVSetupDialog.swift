@@ -51,7 +51,7 @@ final class WebDAVSetupDialog: NSWindowController {
         guard let config = existingConfig else { return }
         urlField.stringValue = config.serverURL.absoluteString
         usernameField.stringValue = config.username
-        if let pwd = KeychainHelper.loadPassword(for: config.id.uuidString) {
+        if let pwd = SyncCoordinator.shared.password(for: config.id) {
             passwordField.stringValue = pwd
         }
         remotePathField.stringValue = config.remotePath

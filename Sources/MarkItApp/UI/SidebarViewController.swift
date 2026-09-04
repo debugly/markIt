@@ -14,7 +14,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     private var cancellables = Set<AnyCancellable>()
 
     private let scrollView = NSScrollView()
-    private let outlineView = NSOutlineView()
+    private let outlineView = SidebarOutlineView()
     private let bottomBar = NSView()
     private let bottomDivider = NSBox()
 
@@ -131,19 +131,6 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         bottomDivider.translatesAutoresizingMaskIntoConstraints = false
         bottomDivider.boxType = .separator
 
-        let openFolderButton = NSButton()
-        openFolderButton.translatesAutoresizingMaskIntoConstraints = false
-        openFolderButton.bezelStyle = .regularSquare
-        openFolderButton.isBordered = false
-        if #available(macOS 11.0, *) {
-            openFolderButton.image = NSImage(systemSymbolName: "folder.badge.plus", accessibilityDescription: "打开文件夹")
-        }
-        openFolderButton.title = " 打开文件夹"
-        openFolderButton.imagePosition = .imageLeading
-        openFolderButton.font = .systemFont(ofSize: 12, weight: .medium)
-        openFolderButton.target = self
-        openFolderButton.action = #selector(handleOpenFolder)
-
         let addWebDAVButton = NSButton()
         addWebDAVButton.translatesAutoresizingMaskIntoConstraints = false
         addWebDAVButton.bezelStyle = .regularSquare
@@ -181,18 +168,13 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         separator.translatesAutoresizingMaskIntoConstraints = false
         separator.boxType = .separator
 
-        bottomBar.addSubview(openFolderButton)
         bottomBar.addSubview(addWebDAVButton)
         bottomBar.addSubview(separator)
         bottomBar.addSubview(settingsButton)
         bottomBar.addSubview(styleButton)
 
         NSLayoutConstraint.activate([
-            openFolderButton.leadingAnchor.constraint(equalTo: bottomBar.leadingAnchor, constant: 10),
-            openFolderButton.centerYAnchor.constraint(equalTo: bottomBar.centerYAnchor),
-            openFolderButton.heightAnchor.constraint(equalToConstant: 24),
-
-            addWebDAVButton.leadingAnchor.constraint(equalTo: openFolderButton.trailingAnchor, constant: 4),
+            addWebDAVButton.leadingAnchor.constraint(equalTo: bottomBar.leadingAnchor, constant: 10),
             addWebDAVButton.centerYAnchor.constraint(equalTo: bottomBar.centerYAnchor),
             addWebDAVButton.widthAnchor.constraint(equalToConstant: 24),
             addWebDAVButton.heightAnchor.constraint(equalToConstant: 24),
@@ -355,6 +337,15 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         let clickedRow = outlineView.clickedRow
         guard clickedRow >= 0, let item = outlineView.item(atRow: clickedRow) else { return }
 
+        if let str = item as? String {
+            if str == folderGroupIdentifier {
+                toggleFolderGroup()
+            } else if str == recentGroupIdentifier {
+                toggleRecentGroup()
+            }
+            return
+        }
+
         if let node = item as? FileNode {
             if node.isDirectory {
                 if outlineView.isItemExpanded(item) {
@@ -370,6 +361,42 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         } else if let url = item as? URL {
             state.openFile(url)
         }
+    }
+
+    private func toggleFolderGroup() {
+        if outlineView.isItemExpanded(folderGroupIdentifier) {
+            outlineView.collapseItem(folderGroupIdentifier, collapseChildren: false)
+            isFolderGroupExpanded = false
+        } else {
+            outlineView.expandItem(folderGroupIdentifier, expandChildren: false)
+            isFolderGroupExpanded = true
+        }
+        updateFolderGroupHeader()
+    }
+
+    private func toggleRecentGroup() {
+        if outlineView.isItemExpanded(recentGroupIdentifier) {
+            outlineView.collapseItem(recentGroupIdentifier, collapseChildren: false)
+            isRecentGroupExpanded = false
+        } else {
+            outlineView.expandItem(recentGroupIdentifier, expandChildren: false)
+            isRecentGroupExpanded = true
+        }
+        updateRecentGroupHeader()
+    }
+
+    private func updateFolderGroupHeader() {
+        let row = outlineView.row(forItem: folderGroupIdentifier)
+        guard row >= 0, let headerCell = outlineView.view(atColumn: 0, row: row, makeIfNecessary: false) as? SidebarHeaderCellView else { return }
+        let isExpanded = outlineView.isItemExpanded(folderGroupIdentifier)
+        headerCell.setExpanded(isExpanded)
+    }
+
+    private func updateRecentGroupHeader() {
+        let row = outlineView.row(forItem: recentGroupIdentifier)
+        guard row >= 0, let headerCell = outlineView.view(atColumn: 0, row: row, makeIfNecessary: false) as? SidebarHeaderCellView else { return }
+        let isExpanded = outlineView.isItemExpanded(recentGroupIdentifier)
+        headerCell.setExpanded(isExpanded)
     }
 
     @objc private func handleOpenFolder() {
@@ -464,25 +491,58 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
 
     // MARK: - NSOutlineViewDelegate
 
+    func outlineView(_ outlineView: NSOutlineView, rowViewForItem item: Any) -> NSTableRowView? {
+        let rowId = NSUserInterfaceItemIdentifier("SidebarTableRowView")
+        var rowView = outlineView.makeView(withIdentifier: rowId, owner: self) as? SidebarTableRowView
+        if rowView == nil {
+            rowView = SidebarTableRowView()
+            rowView?.identifier = rowId
+        }
+        return rowView
+    }
+
+    func outlineView(_ outlineView: NSOutlineView, didAdd rowView: NSTableRowView, forRow row: Int) {
+        if rowView.isGroupRowStyle {
+            for subview in rowView.subviews {
+                if let button = subview as? NSButton {
+                    let id = button.identifier?.rawValue ?? ""
+                    if id.contains("ShowHide") || id.contains("Disclosure") ||
+                       button.identifier == NSOutlineView.showHideButtonIdentifier ||
+                       button.identifier == NSOutlineView.disclosureButtonIdentifier {
+                        button.isHidden = true
+                        button.frame = .zero
+                        button.alphaValue = 0
+                    }
+                }
+            }
+        }
+    }
+
     func outlineView(_ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any) -> NSView? {
         if let str = item as? String {
             let headerId = NSUserInterfaceItemIdentifier("HeaderCell")
-            var headerView = outlineView.makeView(withIdentifier: headerId, owner: self) as? NSTableCellView
+            var headerView = outlineView.makeView(withIdentifier: headerId, owner: self) as? SidebarHeaderCellView
             if headerView == nil {
-                headerView = NSTableCellView()
+                headerView = SidebarHeaderCellView()
                 headerView?.identifier = headerId
-                let label = NSTextField(labelWithString: "")
-                label.font = .systemFont(ofSize: 11, weight: .semibold)
-                label.textColor = .secondaryLabelColor
-                label.translatesAutoresizingMaskIntoConstraints = false
-                headerView?.addSubview(label)
-                headerView?.textField = label
-                NSLayoutConstraint.activate([
-                    label.leadingAnchor.constraint(equalTo: headerView!.leadingAnchor, constant: 4),
-                    label.centerYAnchor.constraint(equalTo: headerView!.centerYAnchor)
-                ])
             }
-            headerView?.textField?.stringValue = (str == recentGroupIdentifier) ? "最近打开" : "文件夹"
+            let isFolder = (str == folderGroupIdentifier)
+            let isExpanded = outlineView.isItemExpanded(str)
+            headerView?.configure(
+                title: isFolder ? "文件夹" : "最近打开",
+                isExpanded: isExpanded,
+                showAddButton: isFolder
+            )
+            headerView?.onChevronClicked = { [weak self] in
+                if isFolder {
+                    self?.toggleFolderGroup()
+                } else {
+                    self?.toggleRecentGroup()
+                }
+            }
+            headerView?.onActionClicked = { [weak self] in
+                self?.handleOpenFolder()
+            }
             return headerView
         }
 
@@ -525,8 +585,13 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     func outlineViewItemDidExpand(_ notification: Notification) {
         guard let item = notification.userInfo?["NSObject"] else { return }
         if let str = item as? String {
-            if str == recentGroupIdentifier { isRecentGroupExpanded = true }
-            else if str == folderGroupIdentifier { isFolderGroupExpanded = true }
+            if str == recentGroupIdentifier {
+                isRecentGroupExpanded = true
+                updateRecentGroupHeader()
+            } else if str == folderGroupIdentifier {
+                isFolderGroupExpanded = true
+                updateFolderGroupHeader()
+            }
         } else if let node = item as? FileNode, node.isDirectory {
             expandedFolderURLs.insert(node.url)
         }
@@ -535,8 +600,13 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     func outlineViewItemDidCollapse(_ notification: Notification) {
         guard let item = notification.userInfo?["NSObject"] else { return }
         if let str = item as? String {
-            if str == recentGroupIdentifier { isRecentGroupExpanded = false }
-            else if str == folderGroupIdentifier { isFolderGroupExpanded = false }
+            if str == recentGroupIdentifier {
+                isRecentGroupExpanded = false
+                updateRecentGroupHeader()
+            } else if str == folderGroupIdentifier {
+                isFolderGroupExpanded = false
+                updateFolderGroupHeader()
+            }
         } else if let node = item as? FileNode, node.isDirectory {
             expandedFolderURLs.remove(node.url)
         }
@@ -865,19 +935,17 @@ private final class SidebarRowCellView: NSTableCellView {
         syncStatus: FolderSyncStatus = .synced
     ) {
         label.stringValue = title
+        iconImageView.contentTintColor = isSelected ? .labelColor : .secondaryLabelColor
         if #available(macOS 11.0, *) {
             let symbolName: String
             if isWebDAV {
-                symbolName = "icloud"
-                iconImageView.contentTintColor = .controlAccentColor
+                symbolName = "network"
                 iconImageView.toolTip = "WebDAV 同步文件夹"
             } else if isDirectory {
                 symbolName = "folder"
-                iconImageView.contentTintColor = isSelected ? .labelColor : .secondaryLabelColor
                 iconImageView.toolTip = nil
             } else {
                 symbolName = "doc.text"
-                iconImageView.contentTintColor = isSelected ? .labelColor : .secondaryLabelColor
                 iconImageView.toolTip = nil
             }
             iconImageView.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: isWebDAV ? "WebDAV 同步文件夹" : nil)
@@ -922,3 +990,214 @@ private final class SidebarRowCellView: NSTableCellView {
         }
     }
 }
+
+// MARK: - Custom Views for Sidebar
+
+final class HoverIconButton: NSButton {
+    private var trackingArea: NSTrackingArea?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let existing = trackingArea {
+            removeTrackingArea(existing)
+        }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeInActiveApp, .assumeInside],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+        self.trackingArea = area
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        super.mouseEntered(with: event)
+        contentTintColor = .labelColor
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        contentTintColor = .secondaryLabelColor
+    }
+
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        addCursorRect(bounds, cursor: .pointingHand)
+    }
+}
+
+final class SidebarHeaderCellView: NSTableCellView {
+    private let titleLabel = NSTextField(labelWithString: "")
+    private let chevronButton = HoverIconButton()
+    private let actionButton = HoverIconButton()
+
+    var onChevronClicked: (() -> Void)?
+    var onActionClicked: (() -> Void)?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        setupUI()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        setupUI()
+    }
+
+    private func setupUI() {
+        wantsLayer = true
+
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        titleLabel.font = .systemFont(ofSize: 11, weight: .semibold)
+        titleLabel.textColor = .secondaryLabelColor
+        titleLabel.lineBreakMode = .byTruncatingTail
+
+        chevronButton.translatesAutoresizingMaskIntoConstraints = false
+        chevronButton.bezelStyle = .regularSquare
+        chevronButton.isBordered = false
+        chevronButton.imagePosition = .imageOnly
+        chevronButton.contentTintColor = .secondaryLabelColor
+        chevronButton.target = self
+        chevronButton.action = #selector(handleChevronAction)
+
+        actionButton.translatesAutoresizingMaskIntoConstraints = false
+        actionButton.bezelStyle = .regularSquare
+        actionButton.isBordered = false
+        actionButton.imagePosition = .imageOnly
+        actionButton.contentTintColor = .secondaryLabelColor
+        actionButton.target = self
+        actionButton.action = #selector(handleActionButton)
+        if #available(macOS 11.0, *) {
+            let config = NSImage.SymbolConfiguration(pointSize: 12, weight: .regular)
+            actionButton.image = NSImage(systemSymbolName: "plus", accessibilityDescription: "打开文件夹")?.withSymbolConfiguration(config)
+        }
+        actionButton.toolTip = "打开文件夹"
+
+        addSubview(titleLabel)
+        addSubview(chevronButton)
+        addSubview(actionButton)
+        self.textField = titleLabel
+
+        NSLayoutConstraint.activate([
+            titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+            titleLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
+
+            chevronButton.leadingAnchor.constraint(equalTo: titleLabel.trailingAnchor, constant: 4),
+            chevronButton.centerYAnchor.constraint(equalTo: centerYAnchor),
+            chevronButton.widthAnchor.constraint(equalToConstant: 16),
+            chevronButton.heightAnchor.constraint(equalToConstant: 16),
+
+            actionButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            actionButton.centerYAnchor.constraint(equalTo: centerYAnchor),
+            actionButton.widthAnchor.constraint(equalToConstant: 18),
+            actionButton.heightAnchor.constraint(equalToConstant: 18)
+        ])
+    }
+
+    override var frame: NSRect {
+        get { super.frame }
+        set {
+            var newFrame = newValue
+            if let superview = superview {
+                newFrame.origin.x = 0
+                newFrame.size.width = superview.bounds.width
+            }
+            super.frame = newFrame
+        }
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        var size = newSize
+        if let superview = superview {
+            size.width = superview.bounds.width
+        }
+        super.setFrameSize(size)
+    }
+
+    @objc private func handleChevronAction() {
+        onChevronClicked?()
+    }
+
+    @objc private func handleActionButton() {
+        onActionClicked?()
+    }
+
+    func configure(title: String, isExpanded: Bool, showAddButton: Bool) {
+        titleLabel.stringValue = title
+        setExpanded(isExpanded)
+        actionButton.isHidden = !showAddButton
+    }
+
+    func setExpanded(_ isExpanded: Bool) {
+        if #available(macOS 11.0, *) {
+            let symbolName = isExpanded ? "chevron.down" : "chevron.right"
+            let config = NSImage.SymbolConfiguration(pointSize: 9, weight: .bold)
+            chevronButton.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: isExpanded ? "折叠" : "展开")?.withSymbolConfiguration(config)
+        }
+    }
+}
+
+final class SidebarTableRowView: NSTableRowView {
+    override func didAddSubview(_ subview: NSView) {
+        super.didAddSubview(subview)
+        hideBuiltinGroupDisclosure(subview)
+    }
+
+    override func layout() {
+        super.layout()
+        if isGroupRowStyle {
+            for subview in subviews {
+                if let cellView = subview as? SidebarHeaderCellView {
+                    cellView.frame = bounds
+                } else if let button = subview as? NSButton {
+                    let id = button.identifier?.rawValue ?? ""
+                    if id.contains("ShowHide") || id.contains("Disclosure") ||
+                       button.identifier == NSOutlineView.showHideButtonIdentifier ||
+                       button.identifier == NSOutlineView.disclosureButtonIdentifier {
+                        button.isHidden = true
+                        button.frame = .zero
+                        button.alphaValue = 0
+                        button.removeFromSuperview()
+                    }
+                }
+            }
+        }
+    }
+
+    private func hideBuiltinGroupDisclosure(_ subview: NSView) {
+        guard isGroupRowStyle else { return }
+        if let button = subview as? NSButton {
+            let id = button.identifier?.rawValue ?? ""
+            if id.contains("ShowHide") || id.contains("Disclosure") ||
+               button.identifier == NSOutlineView.showHideButtonIdentifier ||
+               button.identifier == NSOutlineView.disclosureButtonIdentifier {
+                button.isHidden = true
+                button.frame = .zero
+                button.alphaValue = 0
+                button.removeFromSuperview()
+            }
+        }
+    }
+}
+
+final class SidebarOutlineView: NSOutlineView {
+    override func makeView(withIdentifier identifier: NSUserInterfaceItemIdentifier, owner: Any?) -> NSView? {
+        if identifier == NSOutlineView.showHideButtonIdentifier ||
+           identifier.rawValue == "NSOutlineViewShowHideButtonKey" {
+            let emptyView = NSView(frame: .zero)
+            emptyView.isHidden = true
+            return emptyView
+        }
+        return super.makeView(withIdentifier: identifier, owner: owner)
+    }
+
+    override func frameOfOutlineCell(atRow row: Int) -> NSRect {
+        guard row >= 0, let item = item(atRow: row) as? String,
+              (item == "RecentGroup" || item == "FolderGroup") else {
+            return super.frameOfOutlineCell(atRow: row)
+        }
+        return .zero
+    }
+}
+
