@@ -27,8 +27,8 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     private var expandedFolderURLs = Set<URL>()
     private var isRecentGroupExpanded = true
     private var isFolderGroupExpanded = true
-    private var knownRootFolders = Set<URL>()
     private var isPerformingLocalTreeUpdate = false
+    private var isInitialLaunch = true
 
     private enum SelectionSource {
         case folderTree
@@ -122,6 +122,9 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         super.viewDidLoad()
         bindState()
         reloadDataAndExpand()
+        DispatchQueue.main.async { [weak self] in
+            self?.isInitialLaunch = false
+        }
     }
 
     override func viewWillAppear() {
@@ -290,14 +293,6 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             }
         }
 
-        // Newly added root folders default to expanded without overriding user-collapsed roots
-        let currentRoots = Set(state.rootFolders)
-        let newRoots = currentRoots.subtracting(knownRootFolders)
-        for root in newRoots {
-            expandedFolderURLs.insert(root)
-        }
-        knownRootFolders = currentRoots
-
         outlineView.reloadData()
 
         // 2. Expand groups according to user preference
@@ -311,8 +306,8 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         // 3. Restore all previously expanded folders
         restoreExpandedItems(for: state.tree)
 
-        // 4. Ensure current selection's ancestors are expanded
-        if selectionSource != .recentFiles, let currentURL = state.selection {
+        // 4. Ensure current selection's ancestors are expanded (skip on initial startup so folders remain collapsed)
+        if !isInitialLaunch, selectionSource != .recentFiles, let currentURL = state.selection {
             expandAncestors(of: currentURL, in: state.tree)
         }
 
@@ -373,7 +368,9 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             return
         }
 
-        expandAncestors(of: stdURL, in: state.tree)
+        if !isInitialLaunch {
+            expandAncestors(of: stdURL, in: state.tree)
+        }
 
         // Prioritize selecting the FileNode in the folder tree so the user stays oriented in their directory structure
         var treeRow: Int? = nil
@@ -974,9 +971,8 @@ extension SidebarViewController: NSMenuDelegate {
             return
         }
 
-        // Clean up expanded state and known roots for the removed root folder and all its descendants
+        // Clean up expanded state for the removed root folder and all its descendants
         expandedFolderURLs = expandedFolderURLs.filter { !$0.path.hasPrefix(url.path) }
-        knownRootFolders.remove(url)
 
         // Clear selection if the selected file was within this folder
         if let currentURL = state.selection, currentURL.path.hasPrefix(url.path) {
