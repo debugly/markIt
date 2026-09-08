@@ -99,11 +99,12 @@ final class TopToolbarView: NSView {
         addSubview(statsLabel)
         addSubview(dividerBox)
 
-        let leadingConstraint = sidebarButton.leadingAnchor.constraint(equalTo: leadingAnchor, constant: state.showSidebar ? 14 : 78)
+        let leadingConstraint = sidebarButton.leadingAnchor.constraint(
+            equalTo: leadingAnchor, constant: state.showSidebar ? 14 : 86)
         sidebarButtonLeadingConstraint = leadingConstraint
 
         NSLayoutConstraint.activate([
-            heightAnchor.constraint(equalToConstant: 44),
+            heightAnchor.constraint(equalToConstant: 52),
 
             visualEffectView.leadingAnchor.constraint(equalTo: leadingAnchor),
             visualEffectView.trailingAnchor.constraint(equalTo: trailingAnchor),
@@ -145,7 +146,7 @@ final class TopToolbarView: NSView {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] show in
                 guard let self = self else { return }
-                self.sidebarButtonLeadingConstraint?.constant = show ? 14 : 78
+                self.sidebarButtonLeadingConstraint?.constant = show ? 14 : 86
                 self.needsLayout = true
             }
             .store(in: &cancellables)

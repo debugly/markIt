@@ -25,8 +25,7 @@ final class EditorContainerViewController: NSViewController {
     }
 
     override func loadView() {
-        let container = NSView()
-        container.wantsLayer = true
+        let container = EditorContainerBackgroundView()
         container.autoresizingMask = [.width, .height]
 
         toolbarView.onToggleSidebar = { [weak self] in
@@ -44,7 +43,7 @@ final class EditorContainerViewController: NSViewController {
             toolbarView.topAnchor.constraint(equalTo: container.topAnchor),
             toolbarView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             toolbarView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            toolbarView.heightAnchor.constraint(equalToConstant: 44),
+            toolbarView.heightAnchor.constraint(equalToConstant: 52),
 
             editorVC.view.topAnchor.constraint(equalTo: toolbarView.bottomAnchor),
             editorVC.view.leadingAnchor.constraint(equalTo: container.leadingAnchor),
@@ -53,5 +52,25 @@ final class EditorContainerViewController: NSViewController {
         ])
 
         self.view = container
+    }
+}
+
+private final class EditorContainerBackgroundView: NSView {
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        wantsLayer = true
+    }
+
+    override var wantsUpdateLayer: Bool {
+        return true
+    }
+
+    override func updateLayer() {
+        layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
     }
 }

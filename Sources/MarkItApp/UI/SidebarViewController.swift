@@ -74,16 +74,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
 
     override func loadView() {
         let container = NSView()
-        container.wantsLayer = true
         container.autoresizingMask = [.width, .height]
-
-        // Translucent sidebar background extending all the way to the top behind traffic lights
-        let visualEffectView = NSVisualEffectView()
-        visualEffectView.material = .sidebar
-        visualEffectView.blendingMode = .behindWindow
-        visualEffectView.state = .followsWindowActiveState
-        visualEffectView.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(visualEffectView)
 
         setupOutlineView()
         setupBottomBar()
@@ -93,11 +84,6 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         container.addSubview(bottomBar)
 
         NSLayoutConstraint.activate([
-            visualEffectView.topAnchor.constraint(equalTo: container.topAnchor),
-            visualEffectView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            visualEffectView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            visualEffectView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-
             // Start outline view content right below traffic lights
             scrollView.topAnchor.constraint(equalTo: container.topAnchor, constant: 38),
             scrollView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
@@ -1540,4 +1526,5 @@ final class SidebarOutlineView: NSOutlineView {
         super.keyDown(with: event)
     }
 }
+
 

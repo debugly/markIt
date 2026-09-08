@@ -32,10 +32,10 @@ final class MainSplitViewController: NSSplitViewController {
         splitView.isVertical = true
         splitView.dividerStyle = .thin
 
-        sidebarSplitItem = NSSplitViewItem(viewController: sidebarVC)
+        sidebarSplitItem = NSSplitViewItem(sidebarWithViewController: sidebarVC)
+        sidebarSplitItem.canCollapse = true
         sidebarSplitItem.minimumThickness = 220
         sidebarSplitItem.maximumThickness = 450
-        sidebarSplitItem.canCollapse = true
         sidebarSplitItem.holdingPriority = .defaultLow + 1
 
         editorSplitItem = NSSplitViewItem(viewController: editorContainerVC)

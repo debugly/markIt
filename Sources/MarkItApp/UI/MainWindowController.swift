@@ -24,6 +24,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         window.title = "MarkIt"
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
+        window.isOpaque = true
+        window.backgroundColor = .windowBackgroundColor
+
+        let toolbar = NSToolbar(identifier: "MainWindowToolbar")
+        toolbar.showsBaselineSeparator = false
+        window.toolbar = toolbar
+        window.toolbarStyle = .unified
+
         window.tabbingMode = .disallowed
         window.isReleasedWhenClosed = false
         window.isRestorable = false
