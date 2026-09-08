@@ -62,6 +62,7 @@ final class ExternalOpenViewController: NSViewController {
 
         // 主要打开按钮
         openButton.bezelStyle = .rounded
+        openButton.focusRingType = .none
         openButton.target = self
         openButton.action = #selector(handleOpenExternal)
         openButton.keyEquivalent = "\r"
@@ -69,6 +70,7 @@ final class ExternalOpenViewController: NSViewController {
 
         // 次要按钮：在访达中显示
         revealButton.bezelStyle = .rounded
+        revealButton.focusRingType = .none
         revealButton.title = "在访达中显示"
         revealButton.target = self
         revealButton.action = #selector(handleRevealInFinder)

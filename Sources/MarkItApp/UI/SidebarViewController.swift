@@ -156,6 +156,8 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         settingsButton.translatesAutoresizingMaskIntoConstraints = false
         settingsButton.bezelStyle = .regularSquare
         settingsButton.isBordered = false
+        settingsButton.focusRingType = .none
+        settingsButton.refusesFirstResponder = true
         if #available(macOS 11.0, *) {
             settingsButton.image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: "设置")
         }
@@ -167,6 +169,8 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         styleButton.translatesAutoresizingMaskIntoConstraints = false
         styleButton.bezelStyle = .regularSquare
         styleButton.isBordered = false
+        styleButton.focusRingType = .none
+        styleButton.refusesFirstResponder = true
         if #available(macOS 11.0, *) {
             styleButton.image = NSImage(systemSymbolName: "paintpalette", accessibilityDescription: "样式")
         }
@@ -1188,6 +1192,8 @@ private final class SidebarRowCellView: NSTableCellView {
         syncStatus: FolderSyncStatus = .synced
     ) {
         label.stringValue = title
+        label.toolTip = title
+        self.toolTip = title
         iconImageView.contentTintColor = isSelected ? .labelColor : .secondaryLabelColor
         if #available(macOS 11.0, *) {
             let symbolName: String
@@ -1262,6 +1268,18 @@ private final class SidebarRowCellView: NSTableCellView {
 final class HoverIconButton: NSButton {
     private var trackingArea: NSTrackingArea?
 
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        focusRingType = .none
+        refusesFirstResponder = true
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        focusRingType = .none
+        refusesFirstResponder = true
+    }
+
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let existing = trackingArea {
@@ -1322,6 +1340,8 @@ final class SidebarHeaderCellView: NSTableCellView {
         chevronButton.translatesAutoresizingMaskIntoConstraints = false
         chevronButton.bezelStyle = .regularSquare
         chevronButton.isBordered = false
+        chevronButton.focusRingType = .none
+        chevronButton.refusesFirstResponder = true
         chevronButton.imagePosition = .imageOnly
         chevronButton.contentTintColor = .secondaryLabelColor
         chevronButton.target = self
@@ -1330,6 +1350,8 @@ final class SidebarHeaderCellView: NSTableCellView {
         actionButton.translatesAutoresizingMaskIntoConstraints = false
         actionButton.bezelStyle = .regularSquare
         actionButton.isBordered = false
+        actionButton.focusRingType = .none
+        actionButton.refusesFirstResponder = true
         actionButton.imagePosition = .imageOnly
         actionButton.contentTintColor = .secondaryLabelColor
         actionButton.target = self
@@ -1391,6 +1413,8 @@ final class SidebarHeaderCellView: NSTableCellView {
 
     func configure(title: String, isExpanded: Bool, showAddButton: Bool) {
         titleLabel.stringValue = title
+        titleLabel.toolTip = title
+        self.toolTip = title
         setExpanded(isExpanded)
         actionButton.isHidden = !showAddButton
     }

@@ -51,6 +51,8 @@ final class TopToolbarView: NSView {
         sidebarButton.translatesAutoresizingMaskIntoConstraints = false
         sidebarButton.bezelStyle = .regularSquare
         sidebarButton.isBordered = false
+        sidebarButton.focusRingType = .none
+        sidebarButton.refusesFirstResponder = true
         sidebarButton.image = NSImage(systemSymbolName: "sidebar.leading", accessibilityDescription: "显示/隐藏目录")
         sidebarButton.imageScaling = .scaleProportionallyDown
         sidebarButton.toolTip = "显示/隐藏目录"
@@ -69,6 +71,7 @@ final class TopToolbarView: NSView {
         pathControl.controlSize = .small
         pathControl.font = .systemFont(ofSize: 13, weight: .medium)
         pathControl.focusRingType = .none
+        pathControl.refusesFirstResponder = true
         pathControl.isEditable = false
         pathControl.target = self
         pathControl.action = #selector(handlePathControlAction(_:))
@@ -78,6 +81,8 @@ final class TopToolbarView: NSView {
         modeButton.translatesAutoresizingMaskIntoConstraints = false
         modeButton.bezelStyle = .regularSquare
         modeButton.isBordered = false
+        modeButton.focusRingType = .none
+        modeButton.refusesFirstResponder = true
         modeButton.imageScaling = .scaleProportionallyDown
         modeButton.target = self
         modeButton.action = #selector(handleToggleMode)

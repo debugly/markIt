@@ -107,11 +107,13 @@ final class WebDAVSetupDialog: NSWindowController {
 
         selectFolderButton.title = "选择..."
         selectFolderButton.bezelStyle = .rounded
+        selectFolderButton.focusRingType = .none
         selectFolderButton.target = self
         selectFolderButton.action = #selector(handleSelectFolder)
 
         testButton.title = "测试连接"
         testButton.bezelStyle = .rounded
+        testButton.focusRingType = .none
         testButton.target = self
         testButton.action = #selector(handleTestConnection)
 
@@ -124,12 +126,14 @@ final class WebDAVSetupDialog: NSWindowController {
 
         confirmButton.title = existingConfig == nil ? "添加并同步" : "保存并同步"
         confirmButton.bezelStyle = .rounded
+        confirmButton.focusRingType = .none
         confirmButton.keyEquivalent = "\r"
         confirmButton.target = self
         confirmButton.action = #selector(handleConfirm)
 
         cancelButton.title = "取消"
         cancelButton.bezelStyle = .rounded
+        cancelButton.focusRingType = .none
         cancelButton.keyEquivalent = "\u{1b}"
         cancelButton.target = self
         cancelButton.action = #selector(handleCancel)
