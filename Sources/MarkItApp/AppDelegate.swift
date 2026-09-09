@@ -28,34 +28,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         app.run()
     }
 
-    var appState: AppState!
+    let appState = AppState()
     var mainWindowController: MainWindowController!
     private var cancellables = Set<AnyCancellable>()
 
     private var recentFilesSubmenu: NSMenu?
+    private var pendingLaunchURL: URL?
+    private var isAppLaunched = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         print("[MarkIt Log] applicationDidFinishLaunching started")
         NSApp.setActivationPolicy(.regular)
 
-        appState = AppState()
         setupMainMenu()
 
         mainWindowController = MainWindowController(state: appState)
         mainWindowController.show()
         NSApp.activate(ignoringOtherApps: true)
 
-        handleLaunchFile()
         observeRecentFiles()
         SyncCoordinator.shared.syncAll()
+        isAppLaunched = true
         print("[MarkIt Log] applicationDidFinishLaunching finished, window is visible: \(mainWindowController.window?.isVisible ?? false)")
+        handleLaunchFile()
     }
 
     private func handleLaunchFile() {
-        if let url = getInitialFileURL() {
+        if let url = pendingLaunchURL {
+            pendingLaunchURL = nil
             appState.hasOpenedFileOnLaunch = true
             appState.openFile(url)
-        } else {
+        } else if let url = getInitialFileURL() {
+            appState.hasOpenedFileOnLaunch = true
+            appState.openFile(url)
+        } else if !appState.hasOpenedFileOnLaunch && appState.document.url == nil {
             appState.restoreLastOpenedFile()
         }
     }
@@ -63,20 +69,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private static func getInitialFileURL() -> URL? {
         let args = CommandLine.arguments
         guard args.count > 1 else { return nil }
-        let path = args[1]
-        let url = URL(fileURLWithPath: path)
-        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+        for arg in args.dropFirst() {
+            if arg.hasPrefix("-") { continue }
+            let url = URL(fileURLWithPath: arg)
+            if FileManager.default.fileExists(atPath: url.path) {
+                return url
+            }
+        }
+        return nil
     }
 
     private func getInitialFileURL() -> URL? {
         return Self.getInitialFileURL()
     }
 
+    private func handleOpenFile(_ url: URL) {
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        if isAppLaunched {
+            if appState.document.url != url {
+                appState.openFile(url)
+            }
+            mainWindowController?.window?.makeKeyAndOrderFront(nil)
+        } else {
+            pendingLaunchURL = url
+            appState.hasOpenedFileOnLaunch = true
+        }
+    }
+
     func application(_ application: NSApplication, open urls: [URL]) {
         guard let url = urls.first else { return }
-        appState?.hasOpenedFileOnLaunch = true
-        appState?.openFile(url)
-        mainWindowController?.window?.makeKeyAndOrderFront(nil)
+        handleOpenFile(url)
+    }
+
+    func application(_ sender: NSApplication, openFile filename: String) -> Bool {
+        let url = URL(fileURLWithPath: filename)
+        handleOpenFile(url)
+        return true
     }
 
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
@@ -92,8 +120,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard let state = appState else { return .terminateNow }
-        return state.document.confirmCloseIfNeeded() ? .terminateNow : .terminateCancel
+        return appState.document.confirmCloseIfNeeded() ? .terminateNow : .terminateCancel
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -310,7 +337,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         if menuItem.action == #selector(menuExportHTML) {
-            return appState?.document.url != nil
+            return appState.document.url != nil
         }
         return true
     }
