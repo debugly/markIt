@@ -16,7 +16,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     private let scrollView = NSScrollView()
     private let outlineView = SidebarOutlineView()
     private let bottomBar = NSView()
-    private let bottomDivider = NSBox()
+    private let filterField = NSSearchField()
 
     private let recentGroupIdentifier = "RecentGroup"
     private let folderGroupIdentifier = "FolderGroup"
@@ -28,6 +28,18 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     private var isFolderGroupExpanded = true
     private var isPerformingLocalTreeUpdate = false
     private var isSyncingSelection = false
+
+    // MARK: - Filter State
+
+    /// 当前生效的过滤结果，仅用于数据源展示，不修改 AppState 原始数据。
+    private var filteredRecent: [URL] = []
+    private var filteredTree: [FileNode] = []
+
+    private var appliedFilterQuery = ""
+    private var isInFilterSession = false
+    private var expansionSnapshot: Set<URL>?
+    private var selectionAtFilterStart: URL?
+    private var filterSelectionDuringFilter: URL?
 
     private enum SelectionSource {
         case folderTree
@@ -72,14 +84,16 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     }
 
     override func loadView() {
-        let container = NSView()
+        let container = SidebarContainerView()
         container.autoresizingMask = [.width, .height]
+        container.onCommandF = { [weak self] in
+            self?.handleFilterShortcut() ?? false
+        }
 
         setupOutlineView()
         setupBottomBar()
 
         container.addSubview(scrollView)
-        container.addSubview(bottomDivider)
         container.addSubview(bottomBar)
 
         NSLayoutConstraint.activate([
@@ -87,12 +101,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             scrollView.topAnchor.constraint(equalTo: container.topAnchor, constant: 38),
             scrollView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: bottomDivider.topAnchor),
-
-            bottomDivider.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            bottomDivider.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            bottomDivider.bottomAnchor.constraint(equalTo: bottomBar.topAnchor),
-            bottomDivider.heightAnchor.constraint(equalToConstant: 1),
+            scrollView.bottomAnchor.constraint(equalTo: bottomBar.topAnchor),
 
             bottomBar.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             bottomBar.trailingAnchor.constraint(equalTo: container.trailingAnchor),
@@ -148,8 +157,29 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
 
     private func setupBottomBar() {
         bottomBar.translatesAutoresizingMaskIntoConstraints = false
-        bottomDivider.translatesAutoresizingMaskIntoConstraints = false
-        bottomDivider.boxType = .separator
+
+        filterField.translatesAutoresizingMaskIntoConstraints = false
+        filterField.placeholderString = "过滤文件名"
+        filterField.delegate = self
+        filterField.target = self
+        filterField.action = #selector(handleFilterFieldAction)
+        filterField.sendsSearchStringImmediately = true
+        filterField.sendsWholeSearchString = false
+        filterField.setAccessibilityLabel("过滤文件名")
+        filterField.setAccessibilityRole(.init(rawValue: "AXSearchField"))
+        bottomBar.addSubview(filterField)
+
+        // Keep the field usable at the bottom bar's minimum rendered width without
+        // breaking layout if the sidebar is ever made narrower.
+        let minimumWidth = filterField.widthAnchor.constraint(greaterThanOrEqualToConstant: 80)
+        minimumWidth.priority = .defaultHigh
+
+        NSLayoutConstraint.activate([
+            filterField.leadingAnchor.constraint(equalTo: bottomBar.leadingAnchor, constant: 8),
+            filterField.trailingAnchor.constraint(equalTo: bottomBar.trailingAnchor, constant: -8),
+            filterField.centerYAnchor.constraint(equalTo: bottomBar.centerYAnchor),
+            minimumWidth
+        ])
     }
 
     private func bindState() {
@@ -167,6 +197,13 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             .sink { [weak self] _ in
                 guard let self = self else { return }
                 if self.isPerformingLocalTreeUpdate { return }
+                // Requirement 5.3: recompute the filtered list from the updated data
+                // without clearing the query. The root group rows may appear or
+                // disappear, so a full reload is required while filtering.
+                if self.isFiltering {
+                    self.reloadDataAndExpand()
+                    return
+                }
                 let currentRootCount = self.outlineView.numberOfChildren(ofItem: nil)
                 let expectedRootCount = self.state.recentFiles.isEmpty ? 1 : 2
                 if currentRootCount != expectedRootCount {
@@ -194,7 +231,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
                         self.selectionSource = self.isURLInTree(url) ? .folderTree : .recentFiles
                     }
                 }
-                self.syncSelection(url)
+                self.syncSelectionForCurrentMode(url)
             }
             .store(in: &cancellables)
 
@@ -246,11 +283,23 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         }
     }
 
-    private func reloadDataAndExpand() {
+    private func reloadDataAndExpand(captureExpansion: Bool = true) {
+        // Requirement 2: while filtering, the outline shows derived data only. Every
+        // matching ancestor directory is expanded without animation.
+        if isFiltering {
+            recomputeFilteredData()
+            outlineView.reloadData()
+            expandFilteredItems()
+            syncSelectionForCurrentMode(state.selection)
+            return
+        }
+
         // 1. Snapshot all currently expanded folder URLs from the outline view
-        for row in 0..<outlineView.numberOfRows {
-            if let node = outlineView.item(atRow: row) as? FileNode, node.isDirectory, outlineView.isItemExpanded(node) {
-                expandedFolderURLs.insert(node.url)
+        if captureExpansion {
+            for row in 0..<outlineView.numberOfRows {
+                if let node = outlineView.item(atRow: row) as? FileNode, node.isDirectory, outlineView.isItemExpanded(node) {
+                    expandedFolderURLs.insert(node.url)
+                }
             }
         }
 
@@ -264,8 +313,13 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             outlineView.expandItem(folderGroupIdentifier, expandChildren: false)
         }
 
-        // 3. Restore all previously expanded folders
-        restoreExpandedItems(for: state.tree)
+        // 3. Restore expanded folders. When leaving a filter session the recorded
+        // snapshot is authoritative, so collapsed directories are restored too.
+        if captureExpansion {
+            restoreExpandedItems(for: state.tree)
+        } else {
+            applyExpansion(expandedFolderURLs, to: state.tree)
+        }
 
         // 4. Ensure current selection's ancestors are expanded
         if selectionSource != .recentFiles, let currentURL = state.selection {
@@ -273,6 +327,249 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         }
 
         syncSelection(state.selection)
+    }
+
+    // MARK: - Filtering
+
+    private var filterQuery: String {
+        filterField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var isFiltering: Bool {
+        !filterQuery.isEmpty
+    }
+
+    @objc private func handleFilterFieldAction() {
+        handleFilterQueryChanged()
+    }
+
+    private func handleFilterQueryChanged() {
+        let query = filterQuery
+        guard query != appliedFilterQuery else { return }
+        let wasFiltering = isInFilterSession
+        appliedFilterQuery = query
+
+        if query.isEmpty {
+            if wasFiltering {
+                endFilterSession()
+            }
+            return
+        }
+
+        if !wasFiltering {
+            // Requirement 3.2: capture the expanded/collapsed state at the start of
+            // the filter session, before the outline is rearranged.
+            expansionSnapshot = expandedFolderURLs
+            selectionAtFilterStart = state.selection
+            filterSelectionDuringFilter = nil
+            isInFilterSession = true
+        }
+
+        reloadDataAndExpand()
+    }
+
+    /// Requirement 3: restore the outline to the unfiltered state.
+    private func endFilterSession() {
+        let snapshot = expansionSnapshot ?? expandedFolderURLs
+        let startSelection = selectionAtFilterStart
+        let duringSelection = filterSelectionDuringFilter
+
+        isInFilterSession = false
+        expansionSnapshot = nil
+        selectionAtFilterStart = nil
+        filterSelectionDuringFilter = nil
+        applyFilterQuery("")
+
+        // Requirement 3.3: replay the recorded expansion state exactly.
+        expandedFolderURLs = snapshot
+        reloadDataAndExpand(captureExpansion: false)
+
+        // Requirements 3.4 / 3.5: prefer the file selected while filtering, otherwise
+        // fall back to the selection held when the session began.
+        var target: URL?
+        if let during = duringSelection, isURLInFullData(during) {
+            target = during
+        } else if let start = startSelection, isURLInFullData(start) {
+            target = start
+        }
+
+        if let target = target {
+            selectionSource = isURLInTree(target) ? .folderTree : .recentFiles
+            syncSelection(target)
+        } else {
+            isSyncingSelection = true
+            outlineView.deselectAll(nil)
+            isSyncingSelection = false
+        }
+        reloadVisibleRows()
+    }
+
+    /// Requirement 6.3 / 6.4: Escape clears the query (full restore) and hands focus
+    /// back to the outline view.
+    private func handleFilterFieldEscape() {
+        guard let window = view.window else { return }
+        if !filterQuery.isEmpty {
+            filterField.stringValue = ""
+            handleFilterQueryChanged()
+        }
+        window.makeFirstResponder(outlineView)
+    }
+
+    /// Requirement 6.1 / 6.2: Cmd+F focuses the filter field; a second press is a no-op.
+    private func handleFilterShortcut() -> Bool {
+        guard let window = view.window, window.isKeyWindow else { return false }
+        guard view.frame.width > 1, !view.isHiddenOrHasHiddenAncestor else { return false }
+
+        if window.firstResponder === filterField { return true }
+        if let editor = filterField.currentEditor(), editor === window.firstResponder { return true }
+
+        window.makeFirstResponder(filterField)
+        return true
+    }
+
+    private func applyFilterQuery(_ query: String) {
+        appliedFilterQuery = query
+        filterField.stringValue = query
+    }
+
+    /// Requirement 5.1: derived copies only, `AppState` is never mutated.
+    private func recomputeFilteredData() {
+        let query = filterQuery
+        guard !query.isEmpty else {
+            filteredRecent = []
+            filteredTree = []
+            return
+        }
+        filteredRecent = state.recentFiles.filter { matchesFilter(displayName(forRecentFile: $0), query: query) }
+        filteredTree = filteredNodes(from: state.tree, query: query)
+    }
+
+    private func matchesFilter(_ text: String, query: String) -> Bool {
+        text.range(of: query, options: .caseInsensitive) != nil
+    }
+
+    /// Requirements 2.3 / 2.4: a directory survives only when it has at least one
+    /// matching descendant file; everything else is pruned away.
+    private func filteredNodes(from nodes: [FileNode], query: String) -> [FileNode] {
+        var result: [FileNode] = []
+        for node in nodes {
+            if node.isDirectory {
+                let children = filteredNodes(from: node.children ?? [], query: query)
+                guard !children.isEmpty else { continue }
+                var matched = node
+                matched.children = children
+                result.append(matched)
+            } else if matchesFilter(node.displayName, query: query) {
+                result.append(node)
+            }
+        }
+        return result
+    }
+
+    /// Requirement 2.6: the folder group is only worth showing when a file matched.
+    private func filteredTreeContainsFile() -> Bool {
+        func hasFile(_ nodes: [FileNode]) -> Bool {
+            nodes.contains { $0.isDirectory ? hasFile($0.children ?? []) : true }
+        }
+        return hasFile(filteredTree)
+    }
+
+    private var filteredRootGroupIdentifiers: [String] {
+        var identifiers: [String] = []
+        if !filteredRecent.isEmpty { identifiers.append(recentGroupIdentifier) }
+        if filteredTreeContainsFile() { identifiers.append(folderGroupIdentifier) }
+        return identifiers
+    }
+
+    private func displayName(forRecentFile url: URL) -> String {
+        let parentName = url.deletingLastPathComponent().lastPathComponent
+        return (!parentName.isEmpty && parentName != "/") ? "\(parentName)/\(url.lastPathComponent)" : url.lastPathComponent
+    }
+
+    private func expandFilteredItems() {
+        NSAnimationContext.beginGrouping()
+        NSAnimationContext.current.duration = 0
+        outlineView.expandItem(recentGroupIdentifier, expandChildren: false)
+        outlineView.expandItem(folderGroupIdentifier, expandChildren: false)
+        expandAllDirectories(in: filteredTree)
+        NSAnimationContext.endGrouping()
+    }
+
+    private func expandAllDirectories(in nodes: [FileNode]) {
+        for node in nodes where node.isDirectory {
+            outlineView.expandItem(node, expandChildren: false)
+            expandAllDirectories(in: node.children ?? [])
+        }
+    }
+
+    private func applyExpansion(_ expanded: Set<URL>, to nodes: [FileNode]) {
+        for node in nodes where node.isDirectory {
+            if expanded.contains(node.url) {
+                outlineView.expandItem(node, expandChildren: false)
+            } else {
+                outlineView.collapseItem(node, collapseChildren: true)
+            }
+            applyExpansion(expanded, to: node.children ?? [])
+        }
+    }
+
+    private func isURLInFullData(_ url: URL) -> Bool {
+        let stdURL = url.standardizedFileURL
+        if state.recentFiles.contains(where: { $0.standardizedFileURL == stdURL }) {
+            return true
+        }
+        func contains(_ nodes: [FileNode]) -> Bool {
+            for node in nodes {
+                if node.url.standardizedFileURL == stdURL { return true }
+                if let children = node.children, contains(children) { return true }
+            }
+            return false
+        }
+        return contains(state.tree)
+    }
+
+    private func syncSelectionForCurrentMode(_ url: URL?) {
+        if isFiltering {
+            syncSelectionWhileFiltering(url)
+        } else {
+            syncSelection(url)
+        }
+    }
+
+    /// Requirements 4.3 - 4.5: match the selection against the filtered rows.
+    private func syncSelectionWhileFiltering(_ selectedURL: URL?) {
+        guard let url = selectedURL else {
+            isSyncingSelection = true
+            outlineView.deselectAll(nil)
+            isSyncingSelection = false
+            return
+        }
+
+        let stdURL = url.standardizedFileURL
+        var recentRow: Int?
+        var treeRow: Int?
+
+        for row in 0..<outlineView.numberOfRows {
+            guard let item = outlineView.item(atRow: row) else { continue }
+            if recentRow == nil, let recentURL = item as? URL, recentURL.standardizedFileURL == stdURL {
+                recentRow = row
+            } else if treeRow == nil, let node = item as? FileNode, node.url.standardizedFileURL == stdURL {
+                treeRow = row
+            }
+        }
+
+        isSyncingSelection = true
+        defer { isSyncingSelection = false }
+
+        // Requirement 4.4: when the URL appears in both groups, prefer the recent row.
+        if let row = recentRow ?? treeRow {
+            outlineView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+            outlineView.scrollRowToVisible(row)
+            filterSelectionDuringFilter = url
+        } else {
+            // Requirement 4.3
+            outlineView.deselectAll(nil)
+        }
     }
 
     private func restoreExpandedItems(for nodes: [FileNode]) {
@@ -383,6 +680,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
 
         if let node = item as? FileNode {
             if node.isDirectory {
+                // Requirement 4.2: directories only toggle, they are never opened.
                 if outlineView.isItemExpanded(item) {
                     outlineView.collapseItem(item)
                     expandedFolderURLs.remove(node.url)
@@ -390,14 +688,14 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
                     outlineView.expandItem(item)
                     expandedFolderURLs.insert(node.url)
                 }
-                syncSelection(state.selection)
+                syncSelectionForCurrentMode(state.selection)
             } else {
                 lastClickedSidebarURL = node.url
                 selectionSource = .folderTree
                 if state.selection?.standardizedFileURL != node.url.standardizedFileURL {
                     state.openFile(node.url)
                 }
-                syncSelection(node.url)
+                syncSelectionForCurrentMode(node.url)
             }
         } else if let url = item as? URL {
             lastClickedSidebarURL = url
@@ -405,7 +703,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             if state.selection?.standardizedFileURL != url.standardizedFileURL {
                 state.openFile(url)
             }
-            syncSelection(url)
+            syncSelectionForCurrentMode(url)
         }
     }
 
@@ -453,6 +751,8 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
 
     func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
         if item == nil {
+            // Requirements 2.5 / 2.6: empty groups are hidden while filtering.
+            if isFiltering { return filteredRootGroupIdentifiers.count }
             var count = 1 // Folders group is always present
             if !state.recentFiles.isEmpty { count += 1 } // Recent group
             return count
@@ -460,9 +760,9 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
 
         if let str = item as? String {
             if str == recentGroupIdentifier {
-                return state.recentFiles.count
+                return isFiltering ? filteredRecent.count : state.recentFiles.count
             } else if str == folderGroupIdentifier {
-                return state.tree.count
+                return isFiltering ? filteredTree.count : state.tree.count
             }
         }
 
@@ -475,6 +775,10 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
 
     func outlineView(_ outlineView: NSOutlineView, child index: Int, ofItem item: Any?) -> Any {
         if item == nil {
+            if isFiltering {
+                let identifiers = filteredRootGroupIdentifiers
+                return identifiers.indices.contains(index) ? identifiers[index] : folderGroupIdentifier
+            }
             if !state.recentFiles.isEmpty {
                 return index == 0 ? recentGroupIdentifier : folderGroupIdentifier
             }
@@ -483,14 +787,19 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
 
         if let str = item as? String {
             if str == recentGroupIdentifier {
-                return state.recentFiles[index]
+                let files = isFiltering ? filteredRecent : state.recentFiles
+                return files.indices.contains(index) ? files[index] : URL(fileURLWithPath: "/")
             } else if str == folderGroupIdentifier {
-                return state.tree[index]
+                let nodes = isFiltering ? filteredTree : state.tree
+                return nodes.indices.contains(index) ? nodes[index] : FileNode(url: URL(fileURLWithPath: "/"), isDirectory: false)
             }
         }
 
         if let node = item as? FileNode {
-            return node.children?[index] ?? FileNode(url: URL(fileURLWithPath: "/"), isDirectory: false)
+            // Children are read from the item itself so the count reported by
+            // numberOfChildrenOfItem always matches this call, filtered or not.
+            let children = node.children ?? []
+            return children.indices.contains(index) ? children[index] : FileNode(url: URL(fileURLWithPath: "/"), isDirectory: false)
         }
 
         return ""
@@ -815,6 +1124,17 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
 
     func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
         return .move
+    }
+}
+
+extension SidebarViewController: NSSearchFieldDelegate {
+    /// Requirement 6.3 / 6.4: intercept Escape inside the filter field.
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
+            handleFilterFieldEscape()
+            return true
+        }
+        return false
     }
 }
 
@@ -1430,6 +1750,23 @@ final class SidebarTableRowView: NSTableRowView {
                 button.removeFromSuperview()
             }
         }
+    }
+}
+
+/// Requirement 6.1 / 6.2: intercepts ⌘F anywhere in the sidebar so the search
+/// field can be focused from the keyboard. Unhandled events fall through to
+/// `super` so normal key equivalents keep working.
+private final class SidebarContainerView: NSView {
+    var onCommandF: (() -> Bool)?
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if modifiers == .command,
+           let characters = event.charactersIgnoringModifiers,
+           characters.caseInsensitiveCompare("f") == .orderedSame {
+            if onCommandF?() == true { return true }
+        }
+        return super.performKeyEquivalent(with: event)
     }
 }
 
