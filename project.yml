@@ -2,14 +2,14 @@ name: Markit
 options:
   bundleIdPrefix: com.debugly
   deploymentTarget:
-    macOS: "11.0"
+    macOS: "12.0"
   xcodeVersion: "15.0"
 
 targets:
   Markit:
     type: application
     platform: macOS
-    deploymentTarget: "11.0"
+    deploymentTarget: "12.0"
     sources:
       - path: Sources/MarkItApp
         name: Sources
@@ -21,11 +21,11 @@ targets:
         PRODUCT_NAME: Markit
         PRODUCT_BUNDLE_IDENTIFIER: com.debugly.markit
         MARKETING_VERSION: "0.4.0"
-        CURRENT_PROJECT_VERSION: "0904"
+        CURRENT_PROJECT_VERSION: "0909"
         INFOPLIST_FILE: Resources/Info.plist
         GENERATE_INFOPLIST_FILE: "NO"
         SWIFT_VERSION: "5.9"
-        MACOSX_DEPLOYMENT_TARGET: "11.0"
+        MACOSX_DEPLOYMENT_TARGET: "12.0"
         COMBINE_HIDPI_IMAGES: "YES"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOLS: "NO"

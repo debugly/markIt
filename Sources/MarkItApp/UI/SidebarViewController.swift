@@ -21,7 +21,6 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     private let recentGroupIdentifier = "RecentGroup"
     private let folderGroupIdentifier = "FolderGroup"
 
-    private var stylePopover: NSPopover?
     private var webdavDialog: WebDAVSetupDialog?
     private var lastClickedNodeURL: URL?
     private var expandedFolderURLs = Set<URL>()
@@ -151,47 +150,6 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         bottomBar.translatesAutoresizingMaskIntoConstraints = false
         bottomDivider.translatesAutoresizingMaskIntoConstraints = false
         bottomDivider.boxType = .separator
-
-        let settingsButton = NSButton()
-        settingsButton.translatesAutoresizingMaskIntoConstraints = false
-        settingsButton.bezelStyle = .regularSquare
-        settingsButton.isBordered = false
-        settingsButton.focusRingType = .none
-        settingsButton.refusesFirstResponder = true
-        if #available(macOS 11.0, *) {
-            settingsButton.image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: "设置")
-        }
-        settingsButton.toolTip = "设置"
-        settingsButton.target = self
-        settingsButton.action = #selector(handleSettings)
-
-        let styleButton = NSButton()
-        styleButton.translatesAutoresizingMaskIntoConstraints = false
-        styleButton.bezelStyle = .regularSquare
-        styleButton.isBordered = false
-        styleButton.focusRingType = .none
-        styleButton.refusesFirstResponder = true
-        if #available(macOS 11.0, *) {
-            styleButton.image = NSImage(systemSymbolName: "paintpalette", accessibilityDescription: "样式")
-        }
-        styleButton.toolTip = "样式"
-        styleButton.target = self
-        styleButton.action = #selector(handleStylePicker(_:))
-
-        bottomBar.addSubview(settingsButton)
-        bottomBar.addSubview(styleButton)
-
-        NSLayoutConstraint.activate([
-            styleButton.trailingAnchor.constraint(equalTo: bottomBar.trailingAnchor, constant: -10),
-            styleButton.centerYAnchor.constraint(equalTo: bottomBar.centerYAnchor),
-            styleButton.widthAnchor.constraint(equalToConstant: 24),
-            styleButton.heightAnchor.constraint(equalToConstant: 24),
-
-            settingsButton.trailingAnchor.constraint(equalTo: styleButton.leadingAnchor, constant: -6),
-            settingsButton.centerYAnchor.constraint(equalTo: bottomBar.centerYAnchor),
-            settingsButton.widthAnchor.constraint(equalToConstant: 24),
-            settingsButton.heightAnchor.constraint(equalToConstant: 24)
-        ])
     }
 
     private func bindState() {
@@ -489,27 +447,6 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
 
     @objc private func handleOpenFolder() {
         state.promptOpenFolder()
-    }
-
-    @objc private func handleSettings() {
-        // Reserved for future settings panel
-    }
-
-    @objc private func handleStylePicker(_ sender: NSButton) {
-        if let popover = stylePopover, popover.isShown {
-            popover.performClose(sender)
-            return
-        }
-
-        let popover = NSPopover()
-        popover.behavior = .transient
-        let styleVC = StylePopoverViewController(state: state)
-        styleVC.onStyleSelected = { [weak popover] _ in
-            popover?.performClose(nil)
-        }
-        popover.contentViewController = styleVC
-        popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .maxY)
-        self.stylePopover = popover
     }
 
     // MARK: - NSOutlineViewDataSource

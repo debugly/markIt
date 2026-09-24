@@ -30,6 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     let appState = AppState()
     var mainWindowController: MainWindowController!
+    private var preferencesWindowController: PreferencesWindowController?
     private var cancellables = Set<AnyCancellable>()
 
     private var recentFilesSubmenu: NSMenu?
@@ -139,7 +140,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
         appMenu.addItem(withTitle: "关于 \(appName)", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         appMenu.addItem(NSMenuItem.separator())
-        appMenu.addItem(withTitle: "偏好设置...", action: nil, keyEquivalent: ",")
+        appMenu.addItem(withTitle: "偏好设置...", action: #selector(menuOpenPreferences), keyEquivalent: ",")
         appMenu.addItem(NSMenuItem.separator())
 
         let servicesMenu = NSMenu()
@@ -215,9 +216,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         let toggleEditModeItem = viewMenu.addItem(withTitle: "切换编辑模式 (源码/所见即所得)", action: #selector(menuToggleEditMode), keyEquivalent: "e")
         toggleEditModeItem.keyEquivalentModifierMask = [.command, .option]
 
-        let toggleInspectItem = viewMenu.addItem(withTitle: "切换 Webview 审查", action: #selector(menuToggleInspect), keyEquivalent: "i")
-        toggleInspectItem.keyEquivalentModifierMask = [.command, .option]
-
         viewMenu.addItem(NSMenuItem.separator())
         let fullScreenItem = viewMenu.addItem(withTitle: "进入全屏幕", action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f")
         fullScreenItem.keyEquivalentModifierMask = [.command, .control]
@@ -292,6 +290,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     // MARK: - Menu Actions
 
+    @objc private func menuOpenPreferences() {
+        if preferencesWindowController == nil {
+            let wc = PreferencesWindowController(state: appState)
+            wc.onClose = { [weak self] in
+                self?.preferencesWindowController = nil
+            }
+            preferencesWindowController = wc
+        }
+        preferencesWindowController?.show()
+    }
+
     @objc private func menuNewFile() {
         appState.createNewFile()
     }
@@ -327,10 +336,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     @objc private func menuToggleEditMode() {
         appState.toggleEditMode()
-    }
-
-    @objc private func menuToggleInspect() {
-        appState.isWebViewInspectEnabled.toggle()
     }
 
     // MARK: - NSMenuItemValidation
