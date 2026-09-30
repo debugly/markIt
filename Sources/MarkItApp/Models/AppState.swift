@@ -640,6 +640,16 @@ final class AppState: ObservableObject {
         recentFiles = updatedRecentFiles.filter { fileExists(at: $0) }
         saveRecentFiles()
 
+        // 在重建目录树之前，先把 document.url / selection / lastSelectedFileURL
+        // 更新到移动后的新路径。否则 rebuildTree() 会发现旧的 selection 已不存在，
+        // 且 document.url == 旧 selection，进而调用 document.clear() 清空编辑器，
+        // 导致拖拽/重命名后预览变成白板。
+        if let documentURL = documentURL {
+            document.updateURL(documentURL)
+        }
+
+        syncSelection(selectionURL: selectionURL ?? selection, lastSelectedURL: lastSelectedURL ?? lastSelectedFileURL)
+
         let rootsChanged = updatedRootFolders != rootFolders
         if rootsChanged {
             updateSecurityScopedRootAccess(from: rootFolders, to: updatedRootFolders)
@@ -648,12 +658,6 @@ final class AppState: ObservableObject {
         } else {
             rebuildTree()
         }
-
-        if let documentURL = documentURL {
-            document.updateURL(documentURL)
-        }
-
-        syncSelection(selectionURL: selectionURL ?? selection, lastSelectedURL: lastSelectedURL ?? lastSelectedFileURL)
         return true
     }
 
