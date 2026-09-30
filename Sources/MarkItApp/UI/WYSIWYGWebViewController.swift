@@ -82,6 +82,8 @@ final class WYSIWYGWebViewController: NSViewController, WKNavigationDelegate, WK
         webView.navigationDelegate = self
         webView.setValue(false, forKey: "drawsBackground")
         webView.translatesAutoresizingMaskIntoConstraints = false
+        webView.setAccessibilityIdentifier("editorWebView")
+        webView.setAccessibilityLabel("所见即所得编辑器")
 
         updateInspectableState()
 

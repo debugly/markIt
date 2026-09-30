@@ -73,15 +73,34 @@ final class AppState: ObservableObject {
     private let lastOpenedFileURLKey = "MarkIt.LastOpenedFileURL"
 
     init() {
-        restoreBookmarks()
+        if Self.isUITesting {
+            clearPersistedStateForUITest()
+        } else {
+            restoreBookmarks()
+            restoreRecentFiles()
+        }
         restorePreviewStyle()
-        restoreRecentFiles()
         restoreWebViewInspectEnabled()
         rebuildTree()
         setupDocumentObserver()
         NotificationCenter.default.addObserver(forName: Notification.Name("WebDAVSyncDidComplete"), object: nil, queue: .main) { [weak self] _ in
             self?.refresh()
         }
+    }
+
+    /// XCUITest 以 `--uitest-reset` 启动时，忽略此前持久化的书签/最近文件/上次打开文件，
+    /// 保证每次测试都从确定性的空状态开始。
+    private static var isUITesting: Bool {
+        ProcessInfo.processInfo.arguments.contains("--uitest-reset")
+    }
+
+    private func clearPersistedStateForUITest() {
+        defaults.removeObject(forKey: bookmarksKey)
+        defaults.removeObject(forKey: recentFilesKey)
+        defaults.removeObject(forKey: lastOpenedFileBookmarkKey)
+        defaults.removeObject(forKey: lastOpenedFileURLKey)
+        rootFolders = []
+        recentFiles = []
     }
 
     private func restoreRecentFiles() {

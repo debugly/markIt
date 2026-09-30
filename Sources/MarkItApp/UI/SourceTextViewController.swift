@@ -63,12 +63,15 @@ final class SourceTextViewController: NSViewController, NSTextViewDelegate, NSMe
         customTextView.isAutomaticTextReplacementEnabled = false
         customTextView.isAutomaticSpellingCorrectionEnabled = false
         customTextView.delegate = self
+        customTextView.setAccessibilityIdentifier("sourceEditor")
+        customTextView.setAccessibilityLabel("源码编辑器")
 
         let paragraphStyle = NSMutableParagraphStyle()
         paragraphStyle.lineSpacing = 6
         customTextView.defaultParagraphStyle = paragraphStyle
 
         scrollView.documentView = customTextView
+        scrollView.setAccessibilityIdentifier("sourceEditorScrollView")
         self.view = scrollView
     }
 

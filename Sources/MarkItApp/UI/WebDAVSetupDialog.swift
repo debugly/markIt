@@ -105,17 +105,25 @@ final class WebDAVSetupDialog: NSWindowController {
         localPathField.placeholderString = "请选择本地用于同步的文件夹"
         localPathField.isEditable = false
 
+        urlField.setAccessibilityIdentifier("webdavUrlField")
+        usernameField.setAccessibilityIdentifier("webdavUsernameField")
+        passwordField.setAccessibilityIdentifier("webdavPasswordField")
+        remotePathField.setAccessibilityIdentifier("webdavRemotePathField")
+        localPathField.setAccessibilityIdentifier("webdavLocalPathField")
+
         selectFolderButton.title = "选择..."
         selectFolderButton.bezelStyle = .rounded
         selectFolderButton.focusRingType = .none
         selectFolderButton.target = self
         selectFolderButton.action = #selector(handleSelectFolder)
+        selectFolderButton.setAccessibilityIdentifier("webdavSelectFolderButton")
 
         testButton.title = "测试连接"
         testButton.bezelStyle = .rounded
         testButton.focusRingType = .none
         testButton.target = self
         testButton.action = #selector(handleTestConnection)
+        testButton.setAccessibilityIdentifier("webdavTestButton")
 
         testIndicator.style = .spinning
         testIndicator.controlSize = .small
@@ -130,6 +138,7 @@ final class WebDAVSetupDialog: NSWindowController {
         confirmButton.keyEquivalent = "\r"
         confirmButton.target = self
         confirmButton.action = #selector(handleConfirm)
+        confirmButton.setAccessibilityIdentifier("webdavConfirmButton")
 
         cancelButton.title = "取消"
         cancelButton.bezelStyle = .rounded
@@ -137,6 +146,7 @@ final class WebDAVSetupDialog: NSWindowController {
         cancelButton.keyEquivalent = "\u{1b}"
         cancelButton.target = self
         cancelButton.action = #selector(handleCancel)
+        cancelButton.setAccessibilityIdentifier("webdavCancelButton")
 
         let views = [
             titleLabel, hintLabel,

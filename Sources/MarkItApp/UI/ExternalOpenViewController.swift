@@ -67,6 +67,7 @@ final class ExternalOpenViewController: NSViewController {
         openButton.action = #selector(handleOpenExternal)
         openButton.keyEquivalent = "\r"
         openButton.bezelColor = .controlAccentColor
+        openButton.setAccessibilityIdentifier("externalOpenButton")
 
         // 次要按钮：在访达中显示
         revealButton.bezelStyle = .rounded
@@ -74,6 +75,7 @@ final class ExternalOpenViewController: NSViewController {
         revealButton.title = "在访达中显示"
         revealButton.target = self
         revealButton.action = #selector(handleRevealInFinder)
+        revealButton.setAccessibilityIdentifier("externalRevealButton")
 
         buttonStack.addArrangedSubview(openButton)
         buttonStack.addArrangedSubview(revealButton)

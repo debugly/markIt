@@ -139,7 +139,11 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         outlineView.headerView = nil
         outlineView.dataSource = self
         outlineView.delegate = self
-        outlineView.selectionHighlightStyle = .sourceList
+        if #available(macOS 10.12, *) {
+            outlineView.style = .sourceList
+        } else {
+            outlineView.selectionHighlightStyle = .sourceList
+        }
         outlineView.floatsGroupRows = false
         outlineView.rowHeight = 28
         outlineView.intercellSpacing = NSSize(width: 0, height: 2)
@@ -147,6 +151,8 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         outlineView.target = self
         outlineView.action = #selector(handleOutlineClick)
         outlineView.menu = makeContextMenu()
+        outlineView.setAccessibilityIdentifier("sidebarOutline")
+        outlineView.setAccessibilityLabel("文件列表")
 
         // Drag and drop registration
         outlineView.registerForDraggedTypes([.fileURL])
@@ -167,6 +173,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         filterField.sendsWholeSearchString = false
         filterField.setAccessibilityLabel("过滤文件名")
         filterField.setAccessibilityRole(.init(rawValue: "AXSearchField"))
+        filterField.setAccessibilityIdentifier("sidebarFilterField")
         bottomBar.addSubview(filterField)
 
         // Keep the field usable at the bottom bar's minimum rendered width without
@@ -1451,6 +1458,8 @@ private final class SidebarRowCellView: NSTableCellView {
         label.stringValue = title
         label.toolTip = title
         self.toolTip = title
+        setAccessibilityIdentifier("sidebarRowCell")
+        setAccessibilityLabel(title)
         iconImageView.contentTintColor = isSelected ? .labelColor : .secondaryLabelColor
         if #available(macOS 11.0, *) {
             let symbolName: String
@@ -1672,6 +1681,8 @@ final class SidebarHeaderCellView: NSTableCellView {
         titleLabel.stringValue = title
         titleLabel.toolTip = title
         self.toolTip = title
+        setAccessibilityIdentifier("sidebarHeader")
+        setAccessibilityLabel(title)
         setExpanded(isExpanded)
         actionButton.isHidden = !showAddButton
     }

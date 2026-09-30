@@ -58,12 +58,15 @@ final class TopToolbarView: NSView {
         sidebarButton.toolTip = "显示/隐藏目录"
         sidebarButton.target = self
         sidebarButton.action = #selector(handleToggleSidebar)
+        sidebarButton.setAccessibilityIdentifier("sidebarToggleButton")
+        sidebarButton.setAccessibilityLabel("显示/隐藏目录")
 
         // Title Label (used when document.url == nil)
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         titleLabel.font = .systemFont(ofSize: 13, weight: .medium)
         titleLabel.textColor = .labelColor
         titleLabel.lineBreakMode = .byTruncatingTail
+        titleLabel.setAccessibilityIdentifier("titleLabel")
 
         // Path Control (used when document.url != nil)
         pathControl.translatesAutoresizingMaskIntoConstraints = false
@@ -73,6 +76,8 @@ final class TopToolbarView: NSView {
         pathControl.focusRingType = .none
         pathControl.refusesFirstResponder = true
         pathControl.isEditable = false
+        pathControl.setAccessibilityIdentifier("pathControl")
+        pathControl.setAccessibilityLabel("文件路径")
         pathControl.target = self
         pathControl.action = #selector(handlePathControlAction(_:))
         pathControl.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
@@ -86,12 +91,15 @@ final class TopToolbarView: NSView {
         modeButton.imageScaling = .scaleProportionallyDown
         modeButton.target = self
         modeButton.action = #selector(handleToggleMode)
+        modeButton.setAccessibilityIdentifier("editModeButton")
+        modeButton.setAccessibilityLabel("切换编辑模式")
 
         // Stats Label
         statsLabel.translatesAutoresizingMaskIntoConstraints = false
         statsLabel.font = .systemFont(ofSize: 13)
         statsLabel.textColor = .secondaryLabelColor
         statsLabel.alignment = .right
+        statsLabel.setAccessibilityIdentifier("statsLabel")
 
         // Bottom Divider
         dividerBox.translatesAutoresizingMaskIntoConstraints = false

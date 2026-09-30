@@ -70,6 +70,8 @@ enum NamePromptDialog {
         textField.stringValue = context.initialValue
         textField.isEditable = true
         textField.isSelectable = true
+        textField.setAccessibilityIdentifier("namePromptField")
+        textField.setAccessibilityLabel(context.title)
         if let dotIndex = context.initialValue.lastIndex(of: "."), dotIndex > context.initialValue.startIndex {
             textField.selectWithoutExtension = true
         }

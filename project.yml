@@ -21,7 +21,7 @@ targets:
         PRODUCT_NAME: Markit
         PRODUCT_BUNDLE_IDENTIFIER: com.debugly.markit
         MARKETING_VERSION: "0.4.0"
-        CURRENT_PROJECT_VERSION: "0909"
+        CURRENT_PROJECT_VERSION: "0924"
         INFOPLIST_FILE: Resources/Info.plist
         GENERATE_INFOPLIST_FILE: "NO"
         SWIFT_VERSION: "5.9"
@@ -33,13 +33,35 @@ targets:
         ENABLE_HARDENED_RUNTIME: "YES"
         CODE_SIGN_STYLE: Automatic
 
+  MarkitUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    deploymentTarget: "12.0"
+    sources:
+      - path: MarkitUITests
+    dependencies:
+      - target: Markit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.debugly.markit.uitests
+        TEST_TARGET_NAME: Markit
+        GENERATE_INFOPLIST_FILE: "YES"
+        SWIFT_VERSION: "5.9"
+        MACOSX_DEPLOYMENT_TARGET: "12.0"
+        CODE_SIGN_STYLE: Automatic
+
 schemes:
   Markit:
     build:
       targets:
         Markit: all
+        MarkitUITests: [test]
     run:
       config: Debug
+    test:
+      config: Debug
+      targets:
+        - MarkitUITests
     profile:
       config: Release
     archive:

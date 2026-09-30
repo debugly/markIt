@@ -75,6 +75,8 @@ private final class PreferencesViewController: NSViewController {
         )
         toolbar.selectedSegment = 0
         toolbar.translatesAutoresizingMaskIntoConstraints = false
+        toolbar.setAccessibilityIdentifier("prefsTabControl")
+        toolbar.setAccessibilityLabel("偏好设置选项卡")
 
         // --- Content area ---
         let contentHost = NSView()
@@ -156,6 +158,7 @@ private final class GeneralPrefsView: NSViewController {
         let inspectCheck = NSButton(checkboxWithTitle: "启用 WebView 审查工具", target: self, action: #selector(handleInspectToggle(_:)))
         inspectCheck.translatesAutoresizingMaskIntoConstraints = false
         inspectCheck.state = state.isWebViewInspectEnabled ? .on : .off
+        inspectCheck.setAccessibilityIdentifier("inspectCheck")
 
         container.addSubview(inspectCheck)
 
@@ -216,6 +219,8 @@ private final class AppearancePrefsView: NSViewController, NSTableViewDataSource
         tableView.selectionHighlightStyle = .regular
         tableView.target = self
         tableView.action = #selector(handleRowClick)
+        tableView.setAccessibilityIdentifier("styleTable")
+        tableView.setAccessibilityLabel("预览渲染样式列表")
 
         scrollView.documentView = tableView
 

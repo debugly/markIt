@@ -50,6 +50,9 @@ final class PlaceholderView: NSView {
         stackView.addArrangedSubview(titleLabel)
         stackView.addArrangedSubview(messageLabel)
 
+        titleLabel.setAccessibilityIdentifier("placeholderTitle")
+        messageLabel.setAccessibilityIdentifier("placeholderMessage")
+
         addSubview(stackView)
 
         NSLayoutConstraint.activate([
