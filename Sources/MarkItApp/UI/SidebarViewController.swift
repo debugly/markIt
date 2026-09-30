@@ -1826,7 +1826,12 @@ final class SidebarOutlineView: NSOutlineView {
 
     override func keyDown(with event: NSEvent) {
         let modifierFlags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        if modifierFlags == .command && event.keyCode == 51 { // Cmd+Delete (Backspace)
+        // 删除键(退格 keyCode 51) / 前向删除键(fn+delete, keyCode 117) 都触发删除，
+        // 与右键「移到废纸篓」流程一致。保留 Cmd+Delete 兼容旧习惯；忽略 capsLock、
+        // 数字键盘等无意义修饰键。
+        let isDeleteKey = event.keyCode == 51 || event.keyCode == 117
+        let allowedModifiers: NSEvent.ModifierFlags = [.capsLock, .numericPad, .function, .command]
+        if isDeleteKey && modifierFlags.subtracting(allowedModifiers).isEmpty {
             if let controller = delegate as? SidebarViewController {
                 controller.deleteSelectedItem()
                 return
