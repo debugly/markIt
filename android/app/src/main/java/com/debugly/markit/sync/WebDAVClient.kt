@@ -38,20 +38,49 @@ class WebDAVClient(baseUrl: String, username: String, password: String) {
         }
     }
 
+    /**
+     * Joins [remotePath] onto the base URL, escaping each segment but keeping
+     * the separators.
+     *
+     * The whole path must NOT go through URLEncoder: that escapes "/" as "%2F",
+     * so "notes/sub" would ask the server for a single directory literally named
+     * "notes%2Fsub" and every request 404s. Segment-wise escaping leaves the
+     * hierarchy intact while still escaping spaces and non-ASCII in folder names.
+     */
     private fun makeUrl(remotePath: String, isDirectory: Boolean = false): String {
         val trimmed = remotePath.trim('/')
         if (trimmed.isEmpty()) return base
-        var encoded = try {
-            URLEncoder.encode(trimmed, "UTF-8").replace("+", "%20")
-        } catch (e: Exception) {
-            trimmed
-        }
+        var encoded = trimmed.split('/').joinToString("/") { segment -> percentEncodePathSegment(segment) }
         if (isDirectory && !encoded.endsWith("/")) encoded += "/"
         return base + encoded
     }
 
+
+    /**
+     * Percent-encodes one path segment the way URLSession does with
+     * .urlPathAllowed: unreserved characters and the sub-delimiters legal in a
+     * path survive, everything else becomes %XX. Form encoding (URLEncoder) is
+     * the wrong tool here -- it escapes "/" and turns a directory path into a
+     * single nonsense segment.
+     */
+    private fun percentEncodePathSegment(segment: String): String {
+        val sb = StringBuilder(segment.length + 8)
+        for (b in segment.toByteArray(Charsets.UTF_8)) {
+            val c = b.toInt().toChar()
+            when {
+                c.isLetterOrDigit() && b >= 0 -> sb.append(c)
+                c in "-._~!$&'()*+,;=:@" -> sb.append(c)
+                c == '/' -> sb.append('/')
+                else -> sb.append('%').append("%02X".format(b.toInt() and 0xFF))
+            }
+        }
+        return sb.toString()
+    }
+
     private fun request(url: String, method: String): HttpURLConnection {
-        val conn = URL(url).openConnection() as HttpURLConnection
+        val u = URL(url)
+        val conn = u.openConnection() as HttpURLConnection
+        conn.instanceFollowRedirects = true
         conn.requestMethod = method
         conn.setRequestProperty("Authorization", auth)
         conn.setRequestProperty("User-Agent", "MarkIt/0.4.0 (Android)")
@@ -85,6 +114,8 @@ class WebDAVClient(baseUrl: String, username: String, password: String) {
             conn.setRequestProperty("Depth", "0")
             conn.setRequestProperty("Content-Type", "application/xml; charset=utf-8")
             code = conn.responseCode
+        } catch (e: Throwable) {
+            throw e
         } finally {
             conn.disconnect()
         }
