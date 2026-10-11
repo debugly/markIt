@@ -48,4 +48,8 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.1")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     testImplementation("junit:junit:4.13.2")
+    // The Android SDK ships org.json as stubs that throw on every call, which
+    // makes the release parser untestable. The real implementation on the test
+    // classpath is what lets those tests run on the JVM.
+    testImplementation("org.json:json:20231013")
 }
