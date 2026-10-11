@@ -28,7 +28,12 @@ class DocumentStore(private val context: Context, private val treeUri: Uri) {
 
     /** Builds a document URI for a vault-relative path, or null if unreachable. */
     fun uriFor(path: String): Uri? = try {
-        val docId = "${DocumentsContract.getTreeDocumentId(treeUri)}/$path"
+        val treeId = DocumentsContract.getTreeDocumentId(treeUri)
+        // list() hands back paths that already include the root folder name, so
+        // prepending the tree id again would look for MarkIt/MarkIt/....
+        val clean = path.trim('/')
+        val docId = if (clean.startsWith("$treeId/") || clean == treeId) clean
+                    else "$treeId/$clean"
         val candidate = DocumentsContract.buildDocumentUriUsingTree(treeUri, docId)
         // Query to confirm it exists; buildDocumentUri does not validate.
         if (resolver.query(candidate, arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID),
@@ -58,6 +63,22 @@ class DocumentStore(private val context: Context, private val treeUri: Uri) {
         )
     }
 
+    /**
+     * Strips the tree root ("primary:MarkIt/") off a SAF document id so paths
+     * stay relative to the picked folder. DocumentStore addresses everything by
+     * these relative paths, and uriFor() re-adds the root when it builds a URI.
+     */
+    private fun relativeToRoot(docId: String): String {
+        val name = docId.substringAfterLast(':')
+        val root = DocumentsContract.getTreeDocumentId(treeUri)
+        val rootName = root.substringAfterLast(':')
+        return when {
+            name == rootName -> ""
+            name.startsWith("$rootName/") -> name.removePrefix("$rootName/")
+            else -> name
+        }
+    }
+
     private fun toNode(c: Cursor, parentPath: String): FileNode {
         val docId = c.getStringOrNull(DocumentsContract.Document.COLUMN_DOCUMENT_ID).orEmpty()
         val name = c.getStringOrNull(DocumentsContract.Document.COLUMN_DISPLAY_NAME).orEmpty()
@@ -66,7 +87,8 @@ class DocumentStore(private val context: Context, private val treeUri: Uri) {
         val modified = c.getLongOrZero(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
         val isDir = mime == DocumentsContract.Document.MIME_TYPE_DIR
 
-        val namePart = docId.substringAfterLast(':')
+        // Prefer the provider's display name; the doc id is only a fallback.
+        val namePart = if (name.isNotEmpty()) name else relativeToRoot(docId).substringAfterLast('/')
         val path = if (parentPath.isBlank()) namePart else "$parentPath/$namePart"
 
         return FileNode(

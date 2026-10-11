@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#F2F2F7">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="14dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/bg_card"
+            android:padding="16dp">
+
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="WebDAV 服务器" android:textSize="12sp" android:textColor="#8A8A8E" />
+
+            <EditText android:id="@+id/davUrl" android:layout_width="match_parent"
+                android:layout_height="46dp" android:layout_marginTop="9dp"
+                android:background="@drawable/bg_search" android:paddingStart="12dp"
+                android:paddingEnd="12dp" android:textSize="14sp"
+                android:hint="https://dav.nas.local:5006/" android:inputType="textUri"
+                android:importantForAutofill="no" />
+
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="用户名" android:textSize="12sp" android:textColor="#8A8A8E"
+                android:layout_marginTop="12dp" />
+
+            <EditText android:id="@+id/davUser" android:layout_width="match_parent"
+                android:layout_height="46dp" android:layout_marginTop="7dp"
+                android:background="@drawable/bg_search" android:paddingStart="12dp"
+                android:paddingEnd="12dp" android:textSize="14sp"
+                android:inputType="text" android:importantForAutofill="no" />
+
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="密码" android:textSize="12sp" android:textColor="#8A8A8E"
+                android:layout_marginTop="12dp" />
+
+            <EditText android:id="@+id/davPass" android:layout_width="match_parent"
+                android:layout_height="46dp" android:layout_marginTop="7dp"
+                android:background="@drawable/bg_search" android:paddingStart="12dp"
+                android:paddingEnd="12dp" android:textSize="14sp"
+                android:inputType="textPassword" android:importantForAutofill="no" />
+
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="远程路径" android:textSize="12sp" android:textColor="#8A8A8E"
+                android:layout_marginTop="12dp" />
+
+            <EditText android:id="@+id/davPath" android:layout_width="match_parent"
+                android:layout_height="46dp" android:layout_marginTop="7dp"
+                android:background="@drawable/bg_search" android:paddingStart="12dp"
+                android:paddingEnd="12dp" android:textSize="14sp"
+                android:hint="MarkIt" android:inputType="text"
+                android:importantForAutofill="no" />
+
+            <TextView android:id="@+id/btnTest" android:layout_width="match_parent"
+                android:layout_height="46dp" android:layout_marginTop="18dp"
+                android:background="@drawable/bg_search" android:gravity="center"
+                android:text="测试连接" android:textSize="15sp" android:textStyle="bold"
+                android:textColor="#0A84FF" />
+        </LinearLayout>
+
+        <TextView android:id="@+id/syncStatus" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:layout_marginTop="14dp"
+            android:layout_marginBottom="12dp" android:textSize="12sp" android:textColor="#8A8A8E"
+            android:text="尚未同步" />
+
+        <TextView android:id="@+id/btnSyncNow" android:layout_width="match_parent"
+            android:layout_height="48dp" android:background="@drawable/bg_search"
+            android:gravity="center" android:text="立即同步"
+            android:textSize="15sp" android:textStyle="bold" android:textColor="#34C759" />
+
+    </LinearLayout>
+</ScrollView>
