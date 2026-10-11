@@ -117,14 +117,15 @@ class EditorActivity : AppCompatActivity() {
     }
 
     private fun showMore() {
-        val options = arrayOf("保存", "重命名", "在外部应用中打开", "删除")
+        val options = arrayOf("保存", "重命名", "在所见即所得中打开", "在外部应用中打开", "删除")
         AlertDialog.Builder(this)
             .setItems(options) { _, which ->
                 when (which) {
                     0 -> save()
                     1 -> promptRename()
-                    2 -> openExternally()
-                    3 -> confirmDelete()
+                    2 -> openInWysiwyg()
+                    3 -> openExternally()
+                    4 -> confirmDelete()
                 }
             }
             .show()
@@ -240,6 +241,29 @@ class EditorActivity : AppCompatActivity() {
             SyncRegistry.requestAutoSync(this, store, newPath)
         } catch (e: Exception) {
             Log.w("MarkItEditor", "could not record rename: ${e.message}")
+        }
+    }
+
+    /**
+     * Opens the same note in the rich editor.
+     *
+     * Unsaved edits are flushed first so the rich editor does not start from a
+     * stale copy and overwrite them on its next save.
+     */
+    private fun openInWysiwyg() {
+        val store = resolveStore() ?: return
+        val text = editor.text.toString()
+        io.execute {
+            try {
+                if (dirty) store.writeText(path, text)
+            } catch (e: Exception) {
+                Log.w("MarkItEditor", "could not flush before switching editors: ${e.message}")
+            }
+            runOnUiThread {
+                startActivity(
+                    WysiwygActivity.intent(this, path, path.substringAfterLast('/'), text)
+                )
+            }
         }
     }
 

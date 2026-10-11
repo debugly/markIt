@@ -1,0 +1,879 @@
+
+    <!DOCTYPE html>
+    <html lang="zh-CN">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <!--TIPTAP_BUNDLE-->
+        <style>
+            :root {
+                --text-color: #1e293b;
+                --heading-color: #0f172a;
+                --border-color: #e2e8f0;
+                --table-th-bg: #f6f8fa;
+                --card-bg: linear-gradient(135deg, #fdfbfb 0%, #f6f7f9 100%);
+                --input-bg: #ffffff;
+                --input-border: #cbd5e1;
+                --input-text: #1e293b;
+                --badge-bg: #fff1f2;
+                --badge-text: #e11d48;
+                --label-color: #64748b;
+            }
+            /*
+             * Forced to the dark palette regardless of what the WebView reports.
+             * prefers-color-scheme is unreliable here -- the Android WebView does
+             * not consistently surface the app's night setting -- and the failure
+             * is silent and severe: dark text on the Activity's dark background,
+             * leaving a correctly rendered note that is nearly unreadable. A host
+             * that does report light mode can override it by setting the
+             * data-theme attribute below.
+             */
+            html[data-theme="dark"],
+            :root {
+                --text-color: #e2e8f0;
+                --heading-color: #f1f5f9;
+                --border-color: #334155;
+                --table-th-bg: #1e293b;
+                --card-bg: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+                --input-bg: #1e293b;
+                --input-border: #475569;
+                --input-text: #f1f5f9;
+                --badge-bg: #4c0519;
+                --badge-text: #fda4af;
+                --label-color: #94a3b8;
+                color-scheme: dark;
+            }
+            @media (prefers-color-scheme: light) {
+                :root {
+                    --text-color: #e2e8f0;
+                    --heading-color: #f1f5f9;
+                    --border-color: #334155;
+                    --table-th-bg: #1e293b;
+                    --card-bg: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+                    --input-bg: #1e293b;
+                    --input-border: #475569;
+                    --input-text: #f1f5f9;
+                    --badge-bg: #4c0519;
+                    --badge-text: #fda4af;
+                    --label-color: #94a3b8;
+                }
+            }
+            html, body {
+                margin: 0 !important;
+                padding: 0 !important;
+                width: 100% !important;
+                min-height: 100% !important;
+                background-color: transparent;
+                color: var(--text-color);
+                overflow-x: hidden;
+            }
+            #editor-container {
+                width: 100%;
+                box-sizing: border-box;
+                padding: 24px 40px;
+            }
+            .tiptap {
+                min-height: 100%;
+                outline: none;
+            }
+            .tiptap ul[data-type="taskList"] {
+                list-style: none;
+                padding: 0;
+            }
+            .tiptap ul[data-type="taskList"] li {
+                display: flex;
+                align-items: flex-start;
+                margin-bottom: 0.25em;
+            }
+            .tiptap ul[data-type="taskList"] li > label {
+                margin-right: 0.5em;
+                user-select: none;
+            }
+            .tiptap ul[data-type="taskList"] li > div {
+                flex: 1;
+            }
+            .tiptap table {
+                border-collapse: collapse;
+                table-layout: fixed;
+                width: 100%;
+                margin: 1.5em 0;
+                overflow: hidden;
+            }
+            .tiptap td, .tiptap th {
+                border: 1px solid var(--border-color);
+                box-sizing: border-box;
+                min-width: 1em;
+                padding: 8px 12px;
+                position: relative;
+                vertical-align: top;
+            }
+            .tiptap th {
+                background-color: var(--table-th-bg);
+                font-weight: bold;
+                text-align: left;
+            }
+            .tiptap .selectedCell:after {
+                background: rgba(200, 200, 255, 0.4);
+                content: "";
+                left: 0; right: 0; top: 0; bottom: 0;
+                pointer-events: none;
+                position: absolute;
+                z-index: 2;
+            }
+            .tiptap .column-resize-handle {
+                background-color: #3b82f6;
+                bottom: -2px;
+                position: absolute;
+                right: -2px;
+                top: 0;
+                width: 4px;
+                z-index: 20;
+                pointer-events: none;
+            }
+            
+            #jekyll-header-card {
+                background: var(--card-bg);
+                border: 1px solid var(--border-color);
+                border-radius: 12px;
+                padding: 16px 20px;
+                margin-bottom: 24px;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02);
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+            }
+            .jekyll-badge {
+                display: inline-flex;
+                align-items: center;
+                background-color: var(--badge-bg);
+                color: var(--badge-text);
+                font-size: 11px;
+                font-weight: 600;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                padding: 4px 8px;
+                border-radius: 6px;
+                margin-bottom: 12px;
+            }
+            .jekyll-icon {
+                margin-right: 4px;
+            }
+            .jekyll-fields-grid {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 16px;
+            }
+            .jekyll-field {
+                display: flex;
+                flex-direction: column;
+                gap: 6px;
+            }
+            .jekyll-field.full-width {
+                grid-column: span 2;
+            }
+            .jekyll-field label {
+                font-size: 12px;
+                font-weight: 500;
+                color: var(--label-color);
+            }
+            .jekyll-input-field {
+                font-size: 14px;
+                font-weight: 500;
+                color: var(--input-text);
+                border: 1px solid var(--input-border);
+                border-radius: 8px;
+                padding: 8px 12px;
+                outline: none;
+                transition: border-color 0.2s, box-shadow 0.2s;
+                background-color: var(--input-bg);
+            }
+            .jekyll-input-field:focus {
+                border-color: #e11d48;
+                box-shadow: 0 0 0 3px rgba(225, 29, 72, 0.15);
+            }
+            #jekyll-title-input {
+                font-size: 18px;
+                font-weight: 600;
+            }
+        </style>
+        <style id="theme-style"></style>
+    </head>
+    <body>
+        <div id="editor-container">
+            <div id="jekyll-header-card" style="display: none;">
+                <div class="jekyll-badge">
+                    <span class="jekyll-icon">✍️</span> Jekyll 文章配置
+                </div>
+                <div class="jekyll-fields-grid">
+                    <div class="jekyll-field full-width">
+                        <label for="jekyll-title-input">文章标题</label>
+                        <input type="text" id="jekyll-title-input" class="jekyll-input-field" placeholder="请输入博客标题..." />
+                    </div>
+                    <div class="jekyll-field">
+                        <label for="jekyll-date-input">发布日期</label>
+                        <input type="text" id="jekyll-date-input" class="jekyll-input-field" placeholder="如: 2026-07-15 15:30:00 +0800" />
+                    </div>
+                    <div class="jekyll-field">
+                        <label for="jekyll-date-tags">文章标签 (逗号分隔)</label>
+                        <input type="text" id="jekyll-tags-input" class="jekyll-input-field" placeholder="如: apple, swift, ios" />
+                    </div>
+                </div>
+            </div>
+            <div id="editor"></div>
+        </div>
+
+        <script>
+            function markitMain() {
+                var Tiptap = window.Tiptap;
+                if (!Tiptap) {
+                    var errorMsg = "Local Tiptap bundle not found.";
+                    console.error(errorMsg);
+                    if (window.MarkItBridge) window.MarkItBridge.onError(errorMsg);
+                    var errorDiv = document.createElement('div');
+                    errorDiv.style.color = 'red';
+                    errorDiv.style.padding = '20px';
+                    errorDiv.innerText = 'Failed to load Tiptap editor: ' + errorMsg;
+                    document.body.appendChild(errorDiv);
+                    return;
+                }
+
+                const { Editor, mergeAttributes, StarterKit, Markdown, Heading, TableKit, TaskList, TaskItem } = Tiptap;
+
+            let isUpdatingFromSwift = false;
+
+            const CustomHeading = Heading.extend({
+                renderHTML({ node, HTMLAttributes }) {
+                    const level = node.attrs.level;
+                    let style = '';
+                    if (level === 1) {
+                        style = 'font-size: 28px; color: var(--heading-color); margin-top: 1.5em; margin-bottom: 1em;';
+                    } else if (level === 2) {
+                        style = 'font-size: 24px; border-bottom: 1px solid var(--border-color); padding-bottom: 0.3em; color: var(--heading-color); margin-top: 1.5em; margin-bottom: 1em;';
+                    } else if (level === 3) {
+                        style = 'font-size: 18px; color: var(--heading-color); margin-top: 1em; margin-bottom: 0.5em;';
+                    }
+                    
+                    return [
+                        `h${level}`,
+                        mergeAttributes(this.options.HTMLAttributes, HTMLAttributes, { style }),
+                        0
+                    ];
+                }
+            });
+
+            function containsMarkdownTable(text) {
+                if (!text || typeof text !== 'string') return false;
+                const lines = text.trim().split(/\r?\n/);
+                if (lines.length < 2) return false;
+                const delimiterPattern = /\s*\|?(\s*:?-+:?\s*\|)+\s*:?-+:?\s*\|?\s*$|^\s*\|\s*:?-+:?\s*\|\s*$/;
+                for (let i = 1; i < lines.length; i++) {
+                    if (delimiterPattern.test(lines[i])) {
+                        const prevLine = lines[i - 1].trim();
+                        if (prevLine.includes('|')) {
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            }
+
+            const editor = new Editor({
+                element: document.querySelector('#editor'),
+                extensions: [
+                    StarterKit.configure({
+                        heading: false
+                    }),
+                    Markdown,
+                    CustomHeading,
+                    TaskList,
+                    TaskItem.configure({
+                        nested: true
+                    }),
+                    TableKit.configure({
+                        table: {
+                            resizable: true
+                        },
+                        // Styling lives in the stylesheet (.tiptap th) rather than
+                        // in an inline style attribute. The inline version was
+                        // hard-coded for a light background, so on the dark
+                        // palette it rendered light text on a light header and
+                        // the row became unreadable -- an inline attribute beats
+                        // any stylesheet rule, so this could not be overridden
+                        // from CSS.
+                        tableHeader: {},
+                        tableCell: {}
+                    })
+                ],
+                content: '',
+                contentType: 'markdown',
+                editorProps: {
+                    handlePaste(view, event, slice) {
+                        if (event.target && (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA')) {
+                            return false;
+                        }
+                        if (editor.isActive('codeBlock') || editor.isActive('table')) {
+                            return false;
+                        }
+                        const html = event.clipboardData?.getData('text/html');
+                        if (html && /<table[\s>]/i.test(html)) {
+                            return false;
+                        }
+                        const text = event.clipboardData?.getData('text/plain');
+                        if (text && containsMarkdownTable(text)) {
+                            editor.commands.insertContent(text.trim(), { contentType: 'markdown' });
+                            return true;
+                        }
+                        return false;
+                    }
+                },
+                onUpdate({ editor }) {
+                    if (isUpdatingFromSwift) return;
+                    const markdown = editor.getMarkdown();
+                    const html = editor.getHTML();
+                    if (window.MarkItBridge) window.MarkItBridge.onContentChanged(markdown, html);
+
+                    // Synchronous, robust, native Tiptap-driven trigger and search
+                    const { selection } = editor.state;
+                    const currentPos = selection.from;
+
+                    if (!slashMenuOpen) {
+                        if (currentPos > 0) {
+                            const text = editor.state.doc.textBetween(currentPos - 1, currentPos);
+                            if (text === String.fromCharCode(92) || text === '/' || text === '、') {
+                                triggerPos = currentPos - 1;
+                                openSlashMenu();
+                            }
+                        }
+                    } else {
+                        if (currentPos <= triggerPos) {
+                            closeSlashMenu("onUpdate-pos-less-equal");
+                            return;
+                        }
+                        
+                        const text = editor.state.doc.textBetween(triggerPos, currentPos);
+                        const triggerChar = text[0];
+                        if (triggerChar !== String.fromCharCode(92) && triggerChar !== '/' && triggerChar !== '、') {
+                            closeSlashMenu("onUpdate-invalid-char");
+                            return;
+                        }
+                        
+                        const query = text.slice(1).toLowerCase();
+                        if (query.includes(' ') || query.includes(String.fromCharCode(10))) {
+                            closeSlashMenu("onUpdate-space-or-newline");
+                            return;
+                        }
+                        
+                        filteredItems = menuItems.filter(item => 
+                            item.title.toLowerCase().includes(query) || 
+                            item.id.toLowerCase().includes(query)
+                        );
+                        
+                        activeIndex = 0;
+                        renderSlashMenu();
+                    }
+                },
+                onSelectionUpdate({ editor }) {
+                    if (!slashMenuOpen) return;
+                    const { selection } = editor.state;
+                    const currentPos = selection.from;
+                    if (currentPos <= triggerPos || currentPos > triggerPos + 15) {
+                        closeSlashMenu("selection-update-out-of-bounds");
+                    }
+                }
+            });
+            window.editor = editor;
+
+            // Exposed so a host toolbar can drive formatting without any of it
+            // being reimplemented outside the editor. The macOS build puts these
+            // behind a Swift command; Android calls them through this.
+            window.markitCommand = function(command) {
+                const chain = editor.chain().focus();
+                switch (command) {
+                    case 'toggleBold': chain.toggleBold().run(); break;
+                    case 'toggleItalic': chain.toggleItalic().run(); break;
+                    case 'toggleStrike': chain.toggleStrike().run(); break;
+                    case 'toggleCode': chain.toggleCode().run(); break;
+                    case 'toggleHeading': chain.toggleHeading({ level: 2 }).run(); break;
+                    case 'toggleBulletList': chain.toggleBulletList().run(); break;
+                    case 'toggleOrderedList': chain.toggleOrderedList().run(); break;
+                    case 'toggleTaskList': chain.toggleTaskList().run(); break;
+                    case 'toggleCodeBlock': chain.toggleCodeBlock().run(); break;
+                    case 'toggleBlockquote': chain.toggleBlockquote().run(); break;
+                    default: return false;
+                }
+                return true;
+            };
+
+            // --- SLASH / BACKSLASH COMMAND MENU SYSTEM ---
+            const slashStyle = document.createElement('style');
+            slashStyle.textContent = `
+                .slash-menu-item {
+                    display: flex;
+                    align-items: center;
+                    padding: 6px 8px;
+                    border-radius: 6px;
+                    cursor: pointer;
+                    font-size: 13px;
+                    color: var(--text-color);
+                    transition: background 0.1s, transform 0.1s;
+                }
+                .slash-menu-item.active {
+                    background: var(--border-color) !important;
+                }
+                .slash-menu-item:active {
+                    transform: scale(0.98);
+                }
+            `;
+            document.head.appendChild(slashStyle);
+
+            const menuItems = [
+                { id: 'heading1', title: '一级标题 (H1)', icon: 'H1', command: (editor) => editor.chain().focus().toggleHeading({ level: 1 }).run() },
+                { id: 'heading2', title: '二级标题 (H2)', icon: 'H2', command: (editor) => editor.chain().focus().toggleHeading({ level: 2 }).run() },
+                { id: 'heading3', title: '三级标题 (H3)', icon: 'H3', command: (editor) => editor.chain().focus().toggleHeading({ level: 3 }).run() },
+                { id: 'bold', title: '加粗 (Bold)', icon: 'B', command: (editor) => editor.chain().focus().toggleBold().run() },
+                { id: 'italic', title: '斜体 (Italic)', icon: 'I', command: (editor) => editor.chain().focus().toggleItalic().run() },
+                { id: 'blockquote', title: '引用 (Quote)', icon: '❝', command: (editor) => editor.chain().focus().toggleBlockquote().run() },
+                { id: 'bulletList', title: '无序列表 (Bullet)', icon: '•', command: (editor) => editor.chain().focus().toggleBulletList().run() },
+                { id: 'orderedList', title: '有序列表 (Number)', icon: '1.', command: (editor) => editor.chain().focus().toggleOrderedList().run() },
+                { id: 'taskList', title: '任务列表 (Todo)', icon: '☑', command: (editor) => editor.chain().focus().toggleTaskList().run() },
+                { id: 'codeBlock', title: '代码块 (Code)', icon: '<>', command: (editor) => editor.chain().focus().toggleCodeBlock().run() },
+                { id: 'table', title: '表格 (Table)', icon: '田', command: (editor) => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() }
+            ];
+
+            let slashMenuOpen = false;
+            let activeIndex = 0;
+            let filteredItems = [...menuItems];
+            let triggerPos = null;
+            let navigatingWithKeyboard = false;
+            let lastMouseX = -1;
+            let lastMouseY = -1;
+
+            window.addEventListener('mousemove', function(e) {
+                if (Math.abs(e.clientX - lastMouseX) > 2 || Math.abs(e.clientY - lastMouseY) > 2) {
+                    lastMouseX = e.clientX;
+                    lastMouseY = e.clientY;
+                    navigatingWithKeyboard = false;
+                }
+            }, { capture: true, passive: true });
+
+            const slashMenu = document.createElement('div');
+            slashMenu.id = 'slash-menu';
+            slashMenu.style.cssText = `
+                position: absolute;
+                display: none;
+                width: 200px;
+                max-height: 240px;
+                overflow-y: auto;
+                background: var(--input-bg);
+                border: 1px solid var(--border-color);
+                border-radius: 10px;
+                box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+                z-index: 99999;
+                font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+                padding: 4px;
+            `;
+            document.body.appendChild(slashMenu);
+
+            function getCaretCoordinates() {
+                try {
+                    const { selection } = editor.state;
+                    const coords = editor.view.coordsAtPos(selection.from);
+                    if (coords) {
+                        return {
+                            top: coords.bottom + window.scrollY,
+                            left: coords.left + window.scrollX,
+                            height: (coords.bottom - coords.top) || 20
+                        };
+                    }
+                } catch (e) {}
+                const sel = window.getSelection();
+                if (!sel || !sel.rangeCount) return { top: 0, left: 0, height: 20 };
+                const rect = sel.getRangeAt(0).getBoundingClientRect();
+                return {
+                    top: (rect.bottom || 0) + window.scrollY,
+                    left: (rect.left || 0) + window.scrollX,
+                    height: rect.height || 20
+                };
+            }
+
+            function setActiveIndex(newIndex, scroll = true) {
+                if (filteredItems.length === 0) return;
+                activeIndex = (newIndex + filteredItems.length) % filteredItems.length;
+                const items = slashMenu.querySelectorAll('.slash-menu-item');
+                items.forEach((c, idx) => {
+                    if (idx === activeIndex) {
+                        c.classList.add('active');
+                    } else {
+                        c.classList.remove('active');
+                    }
+                });
+                if (scroll) {
+                    scrollActiveItemIntoView();
+                }
+            }
+
+            function scrollActiveItemIntoView() {
+                const items = slashMenu.querySelectorAll('.slash-menu-item');
+                const activeEl = items[activeIndex];
+                if (!activeEl) return;
+                
+                const menuTop = slashMenu.scrollTop;
+                const menuHeight = slashMenu.clientHeight;
+                const itemTop = activeEl.offsetTop;
+                const itemHeight = activeEl.offsetHeight;
+                const itemBottom = itemTop + itemHeight;
+                
+                if (itemTop < menuTop) {
+                    slashMenu.scrollTop = itemTop;
+                } else if (itemBottom > menuTop + menuHeight) {
+                    slashMenu.scrollTop = itemBottom - menuHeight;
+                }
+            }
+
+            function renderSlashMenu() {
+                slashMenu.innerHTML = '';
+                if (filteredItems.length === 0) {
+                    const empty = document.createElement('div');
+                    empty.innerText = '未找到匹配格式';
+                    empty.style.cssText = 'padding: 8px; color: var(--label-color); text-align: center; font-size: 13px;';
+                    slashMenu.appendChild(empty);
+                    return;
+                }
+
+                filteredItems.forEach((item, index) => {
+                    const el = document.createElement('div');
+                    el.className = 'slash-menu-item' + (index === activeIndex ? ' active' : '');
+                    
+                    const iconEl = document.createElement('span');
+                    iconEl.innerText = item.icon;
+                    iconEl.style.cssText = `
+                        display: inline-flex;
+                        align-items: center;
+                        justify-content: center;
+                        width: 20px;
+                        height: 20px;
+                        background: var(--table-th-bg);
+                        border-radius: 4px;
+                        margin-right: 8px;
+                        font-weight: bold;
+                        font-size: 10px;
+                        color: var(--label-color);
+                    `;
+                    el.appendChild(iconEl);
+
+                    const titleEl = document.createElement('span');
+                    titleEl.innerText = item.title;
+                    el.appendChild(titleEl);
+
+                    el.addEventListener('mouseenter', () => {
+                        if (navigatingWithKeyboard) return;
+                        setActiveIndex(index, false);
+                    });
+                    
+                    el.addEventListener('mousedown', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        selectSlashItem(item);
+                    });
+
+                    slashMenu.appendChild(el);
+                });
+                
+                scrollActiveItemIntoView();
+            }
+
+            function selectSlashItem(item) {
+                const { state } = editor;
+                const { selection } = state;
+                const end = selection.from;
+                
+                const previousMarks = state.storedMarks || selection.$from.marks() || [];
+                
+                editor.chain().focus().deleteRange({ from: triggerPos, to: end }).run();
+                
+                if (previousMarks.length > 0) {
+                    let tr = editor.view.state.tr;
+                    previousMarks.forEach(mark => {
+                        tr = tr.addStoredMark(mark);
+                    });
+                    editor.view.dispatch(tr);
+                }
+                
+                item.command(editor);
+                closeSlashMenu("selectSlashItem");
+            }
+
+            function openSlashMenu() {
+                slashMenuOpen = true;
+                navigatingWithKeyboard = false;
+                filteredItems = [...menuItems];
+                activeIndex = 0;
+                renderSlashMenu();
+                
+                slashMenu.style.visibility = 'hidden';
+                slashMenu.style.display = 'block';
+                slashMenu.scrollTop = 0;
+                
+                const menuWidth = slashMenu.offsetWidth || 200;
+                const menuHeight = slashMenu.offsetHeight || 240;
+                
+                const coords = getCaretCoordinates();
+                
+                const viewportWidth = window.innerWidth;
+                const viewportHeight = window.innerHeight;
+                
+                let left = coords.left;
+                if (left + menuWidth > viewportWidth - 12) {
+                    left = viewportWidth - menuWidth - 12;
+                }
+                if (left < 12) {
+                    left = 12;
+                }
+                
+                let top = coords.top + 6;
+                if (top + menuHeight > viewportHeight - 12) {
+                    const topAbove = coords.top - coords.height - menuHeight - 6;
+                    if (topAbove > 12) {
+                        top = topAbove;
+                    } else {
+                        top = viewportHeight - menuHeight - 12;
+                    }
+                }
+                
+                slashMenu.style.left = left + 'px';
+                slashMenu.style.top = top + 'px';
+                slashMenu.style.visibility = 'visible';
+                
+                document.addEventListener('mousedown', clickOutsideHandler);
+            }
+
+            window.addEventListener('keydown', function(event) {
+                if (slashMenuOpen) {
+                    if (event.key === 'ArrowDown') {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        event.stopImmediatePropagation();
+                        navigatingWithKeyboard = true;
+                        setActiveIndex(activeIndex + 1, true);
+                        return;
+                    }
+                    if (event.key === 'ArrowUp') {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        event.stopImmediatePropagation();
+                        navigatingWithKeyboard = true;
+                        setActiveIndex(activeIndex - 1, true);
+                        return;
+                    }
+                    if (event.key === 'Enter' || event.key === 'Tab') {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        event.stopImmediatePropagation();
+                        if (filteredItems[activeIndex]) {
+                            selectSlashItem(filteredItems[activeIndex]);
+                        }
+                        return;
+                    }
+                    if (event.key === 'Escape') {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        event.stopImmediatePropagation();
+                        closeSlashMenu("escapeKey");
+                        return;
+                    }
+                } else {
+                    if (event.key === 'Escape') {
+                        const activeMarks = editor.state.storedMarks || editor.state.selection.$from.marks();
+                        if (activeMarks && activeMarks.length > 0) {
+                            event.preventDefault();
+                            editor.chain().focus().unsetAllMarks().run();
+                            editor.view.dispatch(editor.view.state.tr.setStoredMarks([]));
+                        }
+                    }
+                }
+            }, true);
+
+            function closeSlashMenu(reason) {
+                slashMenuOpen = false;
+                navigatingWithKeyboard = false;
+                slashMenu.style.display = 'none';
+                document.removeEventListener('mousedown', clickOutsideHandler);
+            }
+
+            function clickOutsideHandler(event) {
+                if (!slashMenu.contains(event.target)) {
+                    closeSlashMenu("clickOutside");
+                }
+            }
+
+            document.addEventListener('copy', function(e) {
+                const selection = window.getSelection();
+                if (!selection.rangeCount) return;
+                
+                const container = document.createElement('div');
+                for (let i = 0; i < selection.rangeCount; i++) {
+                    container.appendChild(selection.getRangeAt(i).cloneContents());
+                }
+                
+                const trailingBreaks = container.querySelectorAll('.ProseMirror-trailingBreak');
+                trailingBreaks.forEach(br => br.remove());
+                
+                const allElements = container.querySelectorAll('*');
+                allElements.forEach(el => {
+                    const classes = Array.from(el.classList);
+                    classes.forEach(c => {
+                        if (c.startsWith('ProseMirror')) {
+                            el.classList.remove(c);
+                        }
+                    });
+                    if (el.classList.length === 0) {
+                        el.removeAttribute('class');
+                    }
+                    
+                    const attrs = Array.from(el.attributes);
+                    attrs.forEach(attr => {
+                        if (attr.name.startsWith('data-') || attr.name === 'contenteditable') {
+                            el.removeAttribute(attr.name);
+                        }
+                    });
+                });
+                
+                const h2s = container.querySelectorAll('h2');
+                // Copy target, so explicit colours here are right: the pasted
+                // result lands in whatever the destination uses, not in this
+                // editor's palette.
+                h2s.forEach(h2 => {
+                    h2.setAttribute('style', 'font-size: 24px; border-bottom: 1px solid #cccccc; padding-bottom: 0.3em; color: black; margin-top: 1.5em; margin-bottom: 1em;');
+                });
+                const h1s = container.querySelectorAll('h1');
+                h1s.forEach(h1 => {
+                    h1.setAttribute('style', 'font-size: 28px; color: black; margin-top: 1.5em; margin-bottom: 1em;');
+                });
+                const tables = container.querySelectorAll('table');
+                tables.forEach(table => {
+                    table.setAttribute('style', 'border-collapse: collapse; margin: 1.5em 0; width: 100%; border: 1px solid #ddd;');
+                });
+                const ths = container.querySelectorAll('th');
+                ths.forEach(th => {
+                    th.setAttribute('style', 'border: 1px solid #ddd; padding: 8px 12px; background-color: #f6f8fa; color: black; font-weight: bold; text-align: left;');
+                });
+                const tds = container.querySelectorAll('td');
+                tds.forEach(td => {
+                    td.setAttribute('style', 'border: 1px solid #ddd; padding: 8px 12px; vertical-align: top;');
+                });
+                
+                e.clipboardData.setData('text/html', container.innerHTML);
+                e.clipboardData.setData('text/plain', selection.toString());
+                e.preventDefault();
+            });
+
+            window.setMarkdownContent = function(markdown, jekyllTitle, jekyllDate, jekyllTags, hasJekyll) {
+                isUpdatingFromSwift = true;
+                editor.commands.setContent(markdown, { contentType: 'markdown' });
+                isUpdatingFromSwift = false;
+                
+                const card = document.getElementById('jekyll-header-card');
+                const titleInput = document.getElementById('jekyll-title-input');
+                const dateInput = document.getElementById('jekyll-date-input');
+                const tagsInput = document.getElementById('jekyll-tags-input');
+                if (hasJekyll) {
+                    card.style.display = 'block';
+                    titleInput.value = jekyllTitle || '';
+                    dateInput.value = jekyllDate || '';
+                    tagsInput.value = jekyllTags || '';
+                } else {
+                    card.style.display = 'none';
+                    titleInput.value = '';
+                    dateInput.value = '';
+                    tagsInput.value = '';
+                }
+                
+                const html = editor.getHTML();
+                if (window.MarkItBridge) window.MarkItBridge.onContentChanged(markdown, html);
+            };
+
+            window.updateStyle = function(cssText) {
+                const styleEl = document.getElementById('theme-style');
+                if (styleEl) {
+                    styleEl.textContent = cssText;
+                }
+            };
+
+            document.getElementById('jekyll-title-input').addEventListener('input', function(e) {
+                if (window.MarkItBridge) window.MarkItBridge.onJekyllTitle(e.target.value);
+            });
+            
+            document.getElementById('jekyll-date-input').addEventListener('input', function(e) {
+                if (window.MarkItBridge) window.MarkItBridge.onJekyllDate(e.target.value);
+            });
+            
+            document.getElementById('jekyll-tags-input').addEventListener('input', function(e) {
+                if (window.MarkItBridge) window.MarkItBridge.onJekyllTags(e.target.value);
+            });
+
+            window.editorUndo = function() {
+                const activeEl = document.activeElement;
+                if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
+                    document.execCommand('undo');
+                    return true;
+                }
+                if (window.editor && window.editor.can().undo()) {
+                    window.editor.chain().focus().undo().run();
+                    return true;
+                }
+                return false;
+            };
+
+            window.editorRedo = function() {
+                const activeEl = document.activeElement;
+                if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
+                    document.execCommand('redo');
+                    return true;
+                }
+                if (window.editor && window.editor.can().redo()) {
+                    window.editor.chain().focus().redo().run();
+                    return true;
+                }
+                return false;
+            };
+
+            window.addEventListener('keydown', function(event) {
+                if ((event.metaKey || event.ctrlKey) && (event.key === 'z' || event.key === 'Z')) {
+                    const activeEl = document.activeElement;
+                    if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
+                        return;
+                    }
+                    if (event.shiftKey) {
+                        if (window.editorRedo && window.editorRedo()) {
+                            event.preventDefault();
+                            event.stopPropagation();
+                        }
+                    } else {
+                        if (window.editorUndo && window.editorUndo()) {
+                            event.preventDefault();
+                            event.stopPropagation();
+                        }
+                    }
+                } else if ((event.metaKey || event.ctrlKey) && (event.key === 'y' || event.key === 'Y')) {
+                    const activeEl = document.activeElement;
+                    if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
+                        return;
+                    }
+                    if (window.editorRedo && window.editorRedo()) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                    }
+                }
+            }, true);
+
+            window.__markitReady = true;
+            if (window.MarkItBridge) window.MarkItBridge.onEditorReady();
+            }
+            try { markitMain(); } catch (err) {
+                if (window.MarkItBridge) {
+                    window.MarkItBridge.onError('init: ' + (err && err.stack ? err.stack : err));
+                }
+                throw err;
+            }
+        </script>
+    </body>
+    </html>
+    

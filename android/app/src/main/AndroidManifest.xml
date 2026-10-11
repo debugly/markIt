@@ -30,5 +30,8 @@
         <activity
             android:name=".ui.FileViewerActivity"
             android:exported="false" />
+        <activity
+            android:name=".ui.WysiwygActivity"
+            android:exported="false" />
     </application>
 </manifest>
