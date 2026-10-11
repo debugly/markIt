@@ -17,6 +17,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.debugly.markit.R
 import com.debugly.markit.model.FileNode
+import com.debugly.markit.model.SupportedFileType
 import com.debugly.markit.storage.DocumentStore
 import com.debugly.markit.sync.FolderSyncConfig
 import com.debugly.markit.sync.SyncConfigStore
@@ -183,14 +184,28 @@ class MainActivity : AppCompatActivity() {
         if (node.isDirectory) {
             currentPath = node.path
             load()
-        } else {
-            val s = store ?: return
-            val name = node.name
-            io.execute {
-                val content = try { s.readText(node.path) } catch (e: Exception) { "" }
-                runOnUiThread {
-                    startActivity(EditorActivity.intent(this@MainActivity, node.path, name, content))
-                }
+            return
+        }
+
+        val name = node.name
+        val type = SupportedFileType.detect(name)
+
+        // Images and HTML have no useful source view, so they go straight to the
+        // read-only viewer. Opening a .png as text showed a screen of binary
+        // noise, and opening a .html file rendered its markup instead of the
+        // page it describes.
+        if (type == SupportedFileType.IMAGE || type == SupportedFileType.HTML) {
+            val tree = getSharedPreferences("markit", MODE_PRIVATE)
+                .getString("tree_uri", null) ?: return
+            startActivity(FileViewerActivity.intent(this, tree, node.path, name))
+            return
+        }
+
+        val s = store ?: return
+        io.execute {
+            val content = try { s.readText(node.path) } catch (e: Exception) { "" }
+            runOnUiThread {
+                startActivity(EditorActivity.intent(this@MainActivity, node.path, name, content))
             }
         }
     }

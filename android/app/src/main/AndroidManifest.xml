@@ -26,5 +26,9 @@
             android:name=".ui.EditorActivity"
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />
+
+        <activity
+            android:name=".ui.FileViewerActivity"
+            android:exported="false" />
     </application>
 </manifest>
