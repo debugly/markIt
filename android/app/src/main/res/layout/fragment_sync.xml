@@ -119,7 +119,7 @@
                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
                     android:text="保存后自动同步" android:textSize="15sp" android:textColor="#1C1C1E" />
                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text="停止编辑 3 秒后自动上传"
+                    android:text="停止编辑 30 秒后自动上传，关闭编辑器时立即同步"
                     android:textSize="12sp" android:textColor="#8A8A8E" />
             </LinearLayout>
             <androidx.appcompat.widget.SwitchCompat android:id="@+id/swAutoSync"

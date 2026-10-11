@@ -3,6 +3,8 @@ package com.debugly.markit.ui
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.Menu
 import android.view.MenuItem
 import android.util.Log
@@ -68,6 +70,13 @@ class EditorActivity : AppCompatActivity() {
             override fun afterTextChanged(s: android.text.Editable?) {
                 dirty = true
                 updateStatus()
+                // Auto-sync is measured from the last keystroke, and the timer it
+                // starts has to be fed by an actual write -- save() is what
+                // calls into the sync registry. Debouncing here means each
+                // keystroke restarts one timer, and the write happens once when
+                // typing settles rather than on every character.
+                autoSave?.removeCallbacks(autoSaveTask)
+                autoSave?.postDelayed(autoSaveTask, AUTO_SAVE_DELAY_MS)
             }
         })
 
@@ -131,6 +140,17 @@ class EditorActivity : AppCompatActivity() {
             .show()
     }
 
+    private var autoSave: Handler? = Handler(Looper.getMainLooper())
+    private val autoSaveTask = Runnable { save() }
+
+    /**
+     * Writes the note once typing has stopped, before the sync timer runs.
+     *
+     * [SyncCoordinator] debounces on its own, but it can only do that for
+     * writes it is told about, and it is told from save(). Without this the note
+     * only reached disk when the editor was left open -- so an idle editor sat
+     * on unsaved text and no idle sync could ever fire.
+     */
     private fun save() {
         val store = resolveStore() ?: return
         val text = editor.text.toString()
@@ -322,10 +342,22 @@ class EditorActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
+        // A pending auto-save would fire into a destroyed view, and onPause is
+        // where the user said they were done, so save now rather than leave it
+        // to the timer.
+        autoSave?.removeCallbacks(autoSaveTask)
         if (dirty) save()
+        // Leaving the note is the moment the user expects their work to be
+        // backed up. The idle timer that covers "typed and walked away" is long
+        // enough that relying on it would mean closing the editor does nothing,
+        // so the exit path flushes instead of waiting it out.
+        resolveStore()?.let { SyncRegistry.flushNow(this, it, path) }
     }
 
     companion object {
+        /** Long enough to not save on every keystroke, short enough that the
+         *  note on disk tracks what is on screen while the user pauses. */
+        private const val AUTO_SAVE_DELAY_MS = 1_500L
         private const val EXTRA_PATH = "path"
         private const val EXTRA_NAME = "name"
         private const val EXTRA_CONTENT = "content"

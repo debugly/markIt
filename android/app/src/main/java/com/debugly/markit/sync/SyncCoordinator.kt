@@ -46,7 +46,7 @@ class SyncCoordinator(
     companion object {
         private const val TAG = "MarkItSync"
         private const val PREFS = "markit_sync_state"
-        private const val DEBOUNCE_MS = 3_000L
+        private const val DEBOUNCE_MS = 30_000L
     }
 
     data class ManifestEntry(
@@ -155,7 +155,7 @@ class SyncCoordinator(
     private var pendingJob: Job? = null
 
     /**
-     * Call after any local write. Fires a sync once the writes stop.
+     * Call after any local write. Fires a sync once the writing stops.
      *
      * Each call cancels the job the previous one started, so a burst of saves
      * collapses into a single sync that runs [DEBOUNCE_MS] after the last of
@@ -163,6 +163,13 @@ class SyncCoordinator(
      * which turns one editing session into a queue of redundant round trips --
      * and several of those racing each other is exactly how the manifest ends
      * up describing a state the server never saw.
+     *
+     * The window is deliberately long. Sync here is a backup of the user's own
+     * notes, not a collaboration feed: the device is the source of truth and
+     * nothing is lost by syncing late, while syncing on every pause would put a
+     * round trip per paragraph in front of someone who only stopped to think.
+     * Leaving the editor flushes immediately via [syncNow], so a long window
+     * never delays the sync that the user actually expects to have happened.
      *
      * The job runs in [autoScope] rather than the caller's, so it is not
      * cancelled by the editor closing the moment it saves.
@@ -179,8 +186,11 @@ class SyncCoordinator(
     /**
      * Runs [sync] straight away, skipping the debounce.
      *
-     * For explicit user actions -- "sync now", or leaving the editor -- where
-     * waiting out the timer would look like the tap did nothing.
+     * For the two moments where waiting would be wrong: an explicit "sync now",
+     * and the user leaving the editor or the app. A note edited and then closed
+     * should be on the server before the user has opened the next one -- if the
+     * window is 30 seconds, closing is what makes the sync happen, not the
+     * timer.
      */
     fun syncNow() {
         pendingJob?.cancel()
@@ -203,6 +213,30 @@ class SyncCoordinator(
         loadState()
         if (path in pendingDeletions) return Status.MODIFIED
         return _status.value
+    }
+
+    /**
+     * True when the file at [path] has local changes the server has not seen.
+     *
+     * The manifest records what the last successful sync left on both sides, so
+     * comparing against it tells a note that is safely backed up from one that
+     * only exists on the phone -- without opening the note and remembering
+     * whether it was ever saved. The file list uses it to draw the pending
+     * marker.
+     *
+     * Nothing here touches the network: the manifest is local state written by
+     * the last sync, which is what keeps this cheap enough to call per row.
+     */
+    fun hasUnsyncedChanges(node: FileNode): Boolean {
+        if (node.isDirectory) return false
+        loadState()
+        val rel = relativeToScope(node.path) ?: return false
+        if (rel in pendingDeletions) return true
+        val known = manifest[rel] ?: return true // never synced: new local file
+        // A coarse mtime is still a change signal; the sync itself re-checks by
+        // size and timestamp, so a false positive here only costs one redundant
+        // upload, whereas a false negative would show a stale cloud as up to date.
+        return known.lastModified != node.modifiedAt || known.contentLength != node.size
     }
 
     /** True when [path] lies inside this coordinator's folder. */

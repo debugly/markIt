@@ -1,6 +1,7 @@
 package com.debugly.markit.sync
 
 import android.content.Context
+import com.debugly.markit.model.FileNode
 import com.debugly.markit.storage.DocumentStore
 
 /**
@@ -66,7 +67,32 @@ object SyncRegistry {
         coordinatorFor(context, store, config).markModified(path)
     }
 
-    /** The coordinator for [path]'s folder, if it is synced. Used by the sync screen. */
+    /**
+     * Syncs [path]'s folder right now, skipping the idle timer.
+     *
+     * Call this when the user is done with a note -- leaving the editor or
+     * backgrounding the app. The idle timer is long by design, so this is what
+     * makes the sync the user expects on closing actually happen.
+     */
+    fun flushNow(context: Context, store: DocumentStore, path: String) {
+        val config = configFor(context, path) ?: return
+        coordinatorFor(context, store, config).syncNow()
+    }
+
+    /**
+     * True when [node] has edits the server has not received.
+     *
+     * For the file list's pending marker. Returns false for anything not in a
+     * synced folder, so an unsynced vault simply shows no markers rather than
+     * every note claiming to be out of date.
+     */
+    fun hasUnsyncedChanges(context: Context, store: DocumentStore, node: FileNode): Boolean {
+        val folder = node.path.substringBeforeLast('/', "")
+        val config = SyncConfigStore(context).forFolder(folder) ?: return false
+        if (!config.isConfigured) return false
+        return coordinatorFor(context, store, config).hasUnsyncedChanges(node)
+    }
+
     /** Drops cached coordinators, e.g. after the credentials or server changed. */
     @Synchronized
     fun invalidate(folderPath: String? = null) {

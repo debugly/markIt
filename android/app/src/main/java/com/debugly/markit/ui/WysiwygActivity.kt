@@ -394,6 +394,13 @@ class WysiwygActivity : Activity() {
         }
     }
 
+    override fun onPause() {
+        super.onPause()
+        // Same reason as the source editor: leaving the note flushes the sync
+        // instead of waiting out the idle timer.
+        resolveStore()?.let { SyncRegistry.flushNow(this, it, path) }
+    }
+
     override fun onDestroy() {
         // Leaving the socket open would keep a port bound for the life of the
         // process and hold the staged page in memory.
