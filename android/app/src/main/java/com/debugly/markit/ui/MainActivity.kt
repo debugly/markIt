@@ -131,11 +131,9 @@ class MainActivity : AppCompatActivity(), BrowseFragment.Host, SettingsFragment.
      */
     // ---- SettingsFragment.Host ----------------------------------------------
 
-    override fun onCloseSettings() {
-        supportFragmentManager.popBackStack()
-        showChrome(true)
-        load()
-    }
+    /** No-op: the tab bar is the way out now. Kept so the fragment can keep
+     *  asking without caring how the Activity decides to leave. */
+    override fun onCloseSettings() = showFiles()
 
     /** The settings screen delegates the folder picker here, so it gets the
      *  same confirmation and the same state handling as the startup path. */
@@ -250,8 +248,18 @@ class MainActivity : AppCompatActivity(), BrowseFragment.Host, SettingsFragment.
 
     /** Returns to the vault. Public so the sync screen's back button can call it. */
     fun showFiles() {
+        // Pop first: pushed screens (folder levels, sync) sit on top. The
+        // settings fragment is not among them -- it is a tab, replaced rather
+        // than pushed -- so it is cleared here too, or it keeps drawing over
+        // the file list.
         supportFragmentManager.popBackStack(null, FragmentManager.POP_BACK_STACK_INCLUSIVE)
+        if (supportFragmentManager.findFragmentById(R.id.rootContainer) is SettingsFragment) {
+            supportFragmentManager.beginTransaction()
+                .remove(supportFragmentManager.findFragmentById(R.id.rootContainer)!!)
+                .commitAllowingStateLoss()
+        }
         showChrome(true)
+        showTabBar(true)
         load()
     }
 
@@ -261,6 +269,7 @@ class MainActivity : AppCompatActivity(), BrowseFragment.Host, SettingsFragment.
             .addToBackStack("sync")
             .commitAllowingStateLoss()
         showChrome(false)
+        showTabBar(false)
     }
 
     /**
@@ -276,17 +285,37 @@ class MainActivity : AppCompatActivity(), BrowseFragment.Host, SettingsFragment.
         findViewById<View>(R.id.searchBar).visibility = v
         findViewById<View>(R.id.fileList).visibility = v
         findViewById<View>(R.id.emptyState).visibility = v
-        findViewById<View>(R.id.bottomBar).visibility = v
         fab?.visibility = v
         findViewById<View>(R.id.browseContainer).visibility = v
     }
 
-        private fun showSettings() {
+    /**
+     * The tab bar.
+     *
+     * Separate from [showChrome] because the settings screen is a tab, not a
+     * place navigated to: hiding the bar that got you there leaves no way back
+     * except the tab you pressed, and a screen that came from a tab should keep
+     * it. Only the pushed screens -- folder browsing, sync, the settings
+     * fragment before it was promoted to a tab -- take it away.
+     */
+    private fun showTabBar(visible: Boolean) {
+        findViewById<View>(R.id.bottomBar).visibility =
+            if (visible) View.VISIBLE else View.GONE
+    }
+
+        /**
+     * The settings tab.
+     *
+     * Not pushed on the back stack: a tab is a peer of the file list, not a
+     * step forward from it, so it has no back button to offer and Back should
+     * leave the app rather than undo the tap.
+     */
+    private fun showSettings() {
         supportFragmentManager.beginTransaction()
             .replace(R.id.rootContainer, SettingsFragment.newInstance())
-            .addToBackStack("settings")
             .commitAllowingStateLoss()
         showChrome(false)
+        showTabBar(true)
     }
 
     private fun load() {

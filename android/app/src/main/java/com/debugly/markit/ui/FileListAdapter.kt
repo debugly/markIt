@@ -84,7 +84,14 @@ class FileListAdapter(
                 else R.drawable.bg_icon_file
             )
             name.text = node.displayName
-            meta.text = metaFor(node)
+
+            // Folders have no size or date, so metaFor returns an empty string.
+            // Leaving the view VISIBLE reserves its line plus its top margin and
+            // the folder name ends up sitting high, off the icon's centre. Hide
+            // it when there is nothing to say.
+            val metaText = metaFor(node)
+            meta.text = metaText
+            meta.visibility = if (metaText.isEmpty()) View.GONE else View.VISIBLE
 
             badge.visibility = if (badgeText != null) View.VISIBLE else View.GONE
             badge.text = badgeText

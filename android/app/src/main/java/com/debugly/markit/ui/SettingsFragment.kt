@@ -44,10 +44,9 @@ class SettingsFragment : Fragment() {
     ): View {
         val v = inflater.inflate(R.layout.fragment_settings, container, false)
 
-        v.findViewById<View>(R.id.settingsBack).setOnClickListener { host?.onCloseSettings() }
-
-        Insets.apply(v.findViewById(R.id.settingsBar), top = true, horizontal = true)
-        Insets.apply(v.findViewById(R.id.settingsScroll), bottom = true, horizontal = true)
+        // Top inset only: there is no toolbar of our own, and the Activity's
+        // chrome already handles the tab bar at the bottom.
+        Insets.apply(v, top = true, horizontal = true)
 
         setUpThemeSpinner(v.findViewById(R.id.themeRow))
         setUpStyleSpinner(v.findViewById(R.id.styleRow))
