@@ -262,7 +262,21 @@ class MainActivity : AppCompatActivity() {
                 val s = store ?: return@setPositiveButton
                 if (newName.isEmpty() || newName == node.name) return@setPositiveButton
                 io.execute {
-                    s.rename(node.path, newName)
+                    // rename() reports failure by returning false rather than
+                    // throwing, and DocumentsProvider.renameDocument fails
+                    // routinely -- some providers refuse the call outright.
+                    // Ignoring it left the row showing the new name while the
+                    // file on disk kept the old one, which reads as the rename
+                    // having worked when nothing moved.
+                    if (!s.rename(node.path, newName)) {
+                        runOnUiThread {
+                            AlertDialog.Builder(this)
+                                .setTitle("重命名失败")
+                                .setMessage("无法重命名「${node.name}」，请换一个名字再试。")
+                                .show()
+                        }
+                        return@execute
+                    }
                     val newPath = if (node.path.contains('/')) {
                         node.path.substringBeforeLast('/') + "/" + newName
                     } else {
