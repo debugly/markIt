@@ -10,7 +10,6 @@ import android.widget.ArrayAdapter
 import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
 import com.debugly.markit.BuildConfig
 import com.debugly.markit.R
@@ -31,23 +30,9 @@ class SettingsFragment : Fragment() {
     interface Host {
         fun onCloseSettings()
         fun onRecentsCleared()
-        fun onVaultPicked(uri: Uri)
+        /** Shows the system folder picker. The Activity confirms and attaches. */
+        fun onRequestVaultPick()
     }
-
-    private val pickTree =
-        registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-            if (uri != null) {
-                runCatching {
-                    requireContext().contentResolver.takePersistableUriPermission(
-                        uri,
-                        android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                            android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                    )
-                }
-                // The Activity owns the SAF grant, so it does the attaching.
-                host?.onVaultPicked(uri)
-            }
-        }
 
     override fun onAttach(context: android.content.Context) {
         super.onAttach(context)
@@ -72,7 +57,10 @@ class SettingsFragment : Fragment() {
             host?.onRecentsCleared()
         }
 
-        v.findViewById<View>(R.id.changeVault).setOnClickListener { pickTree.launch(null) }
+        // The Activity owns the picker: it is the only place that holds the SAF
+        // grant and decides what a switch does to stored state, so a second
+        // picker here would quietly bypass both.
+        v.findViewById<View>(R.id.changeVault).setOnClickListener { host?.onRequestVaultPick() }
         val vaultPath = v.findViewById<TextView>(R.id.vaultPath)
 
         v.findViewById<TextView>(R.id.versionText).text =

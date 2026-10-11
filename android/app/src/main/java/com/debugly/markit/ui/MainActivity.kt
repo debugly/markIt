@@ -44,12 +44,51 @@ class MainActivity : AppCompatActivity(), BrowseFragment.Host, SettingsFragment.
 
     // Listing the vault must stay off the main thread.
     private val io = Executors.newSingleThreadExecutor()
-    private val syncConfigs by lazy { SyncConfigStore(this) }
+    /**
+     * Rebuilt rather than cached: SyncConfigStore resolves the attached
+     * directory once, so an instance made before a switch keeps answering for
+     * the directory the user just left.
+     */
+    private val syncConfigs get() = SyncConfigStore(this)
+
+    /** Manifests and pending deletions, scoped to whichever vault is attached. */
+    private fun syncStatePrefs() = getSharedPreferences("markit_sync_state", MODE_PRIVATE)
 
     private val pickTree = registerForActivityResult(
         ActivityResultContracts.OpenDocumentTree()
     ) { uri ->
-        if (uri != null) attachTree(uri)
+        if (uri != null) confirmAttachTree(uri)
+    }
+
+    /**
+     * Asks before switching the storage directory, because the result surprises
+     * people in two ways that are not obvious from the tap.
+     *
+     * Nothing is copied or deleted -- the notes in the old directory stay
+     * exactly where they are, and this app no longer has permission to see
+     * them. But the file list does empty out, which reads as data loss until
+     * you know otherwise.
+     *
+     * Sync configurations stop applying -- including the saved passwords, which
+     * described the old directory's folders. They are kept rather than deleted,
+     * so returning to the previous directory brings them back intact.
+     */
+    private fun confirmAttachTree(uri: android.net.Uri) {
+        val switching = store != null
+        val message = if (switching) {
+            "MarkIt 将改为读写你选择的新目录。\n\n" +
+                "原目录中的文件不会被删除或移动，仍完整保留在原处，只是 MarkIt 将不再访问它。\n\n" +
+                "同步会暂停：新目录里的文件夹不会同步，原目录的同步设置会保留但暂时停用。" +
+                "换回原来的目录后，同步设置会自动恢复，包括已保存的服务器密码。"
+        } else {
+            "MarkIt 将读写你选择的目录，笔记会保存在其中，不会复制到 App 内部。"
+        }
+        AlertDialog.Builder(this)
+            .setTitle(if (switching) "更换存储目录？" else "选择存储目录")
+            .setMessage(message)
+            .setPositiveButton(if (switching) "更换" else "选择") { _, _ -> attachTree(uri, switching) }
+            .setNegativeButton("取消", null)
+            .show()
     }
 
     // ---- BrowseFragment.Host -------------------------------------------------
@@ -98,7 +137,9 @@ class MainActivity : AppCompatActivity(), BrowseFragment.Host, SettingsFragment.
         load()
     }
 
-    override fun onVaultPicked(uri: android.net.Uri) = attachTree(uri)
+    /** The settings screen delegates the folder picker here, so it gets the
+     *  same confirmation and the same state handling as the startup path. */
+    override fun onRequestVaultPick() = pickTree.launch(null)
 
     override fun onRecentsCleared() {
         // The recent list is a section of the root listing, so it has to be
@@ -164,10 +205,26 @@ class MainActivity : AppCompatActivity(), BrowseFragment.Host, SettingsFragment.
 
         // Re-attach to the previously granted tree, otherwise ask for one.
         val saved = getSharedPreferences("markit", MODE_PRIVATE).getString("tree_uri", null)
-        if (saved != null) attachTree(Uri.parse(saved)) else pickTree.launch(null)
+        // Reattaching on launch is not a switch: there is no previous directory
+        // to lose, so it skips the confirmation.
+        if (saved != null) attachTree(Uri.parse(saved), switching = false) else pickTree.launch(null)
     }
 
-    private fun attachTree(uri: Uri) {
+    /**
+     * Points the app at [uri], optionally discarding what belonged to the
+     * directory it was leaving.
+     */
+    private fun attachTree(uri: Uri, switching: Boolean) {
+        if (switching) {
+            // Sync configuration and manifest are *not* deleted. They stop
+            // applying because the vault id no longer matches, and come back
+            // intact -- password, last sync time and all -- if the user returns
+            // to this directory. The recents list is a different matter: it is
+            // only ever a shortcut to files in the directory just left, so those
+            // rows would all fail to open.
+            RecentFiles(this).clear()
+            SyncRegistry.invalidate()
+        }
         try {
             contentResolver.takePersistableUriPermission(
                 uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
@@ -181,6 +238,12 @@ class MainActivity : AppCompatActivity(), BrowseFragment.Host, SettingsFragment.
         getSharedPreferences("markit", MODE_PRIVATE).edit()
             .putString("tree_uri", uri.toString()).apply()
 
+        // The settings screen is still on the back stack and its fragment is
+        // what is in the container. Without this the switch leaves a blank
+        // screen: the settings fragment draws over a list it knows nothing
+        // about, and load() writes into views that are not on screen.
+        supportFragmentManager.popBackStack(null, FragmentManager.POP_BACK_STACK_INCLUSIVE)
+        showChrome(true)
         currentPath = ""
         load()
     }

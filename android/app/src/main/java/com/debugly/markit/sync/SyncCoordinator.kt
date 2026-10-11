@@ -41,7 +41,15 @@ class SyncCoordinator(
     private val store: DocumentStore,
     private val client: WebDAVClient,
     private val remoteRoot: String,
-    private val localScope: String = ""
+    private val localScope: String = "",
+
+    /**
+     * Identifies the storage directory, so bookkeeping never crosses over.
+     *
+     * Empty keeps the old unscoped keys, which is only correct for a vault
+     * root with nothing to confuse it with; callers pass the real id.
+     */
+    private val vaultId: String = ""
 ) {
     companion object {
         private const val TAG = "MarkItSync"
@@ -85,8 +93,31 @@ class SyncCoordinator(
         context.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
     }
 
-    private fun manifestKey() = "manifest_$localScope"
-    private fun deletionsKey() = "deletions_$localScope"
+    /**
+     * The prefs key for this scope's manifest, namespaced by vault.
+     *
+     * localScope alone is not enough: the same folder name can exist in two
+     * storage directories, and sharing a manifest across them makes each
+     * directory's notes look like the other's were deleted. The vault id keeps
+     * the bookkeeping with the directory it describes.
+     *
+     * Keys written before the vault id existed carry no prefix. They are still
+     * read as a fallback so an existing setup keeps working after the upgrade;
+     * the first save rewrites them under the current scope.
+     */
+    private fun manifestKey() = "manifest_$stateScope"
+    private fun legacyManifestKey() = "manifest_$localScope"
+
+    private fun deletionsKey() = "deletions_$stateScope"
+    private fun legacyDeletionsKey() = "deletions_$localScope"
+
+    /** Vault id and folder scope together, as one key fragment. */
+    private val stateScope: String by lazy {
+        if (vaultId.isEmpty()) localScope else "$vaultId:$localScope"
+    }
+
+    private fun readState(key: String, legacyKey: String): String? =
+        statePrefs.getString(key, null) ?: statePrefs.getString(legacyKey, null)
 
     /**
      * Reads this scope's manifest and pending deletions.
@@ -103,7 +134,7 @@ class SyncCoordinator(
         if (loaded) return
         loaded = true
         try {
-            val raw = statePrefs.getString(manifestKey(), null)
+            val raw = readState(manifestKey(), legacyManifestKey())
             if (raw != null) {
                 val obj = JSONObject(raw).optJSONObject("entries") ?: JSONObject()
                 for (key in obj.keys()) {
@@ -116,7 +147,7 @@ class SyncCoordinator(
                 }
                 Log.i(TAG, "loaded ${manifest.size} manifest entries for '$localScope'")
             }
-            val dels = statePrefs.getString(deletionsKey(), null)
+            val dels = readState(deletionsKey(), legacyDeletionsKey())
             if (dels != null) {
                 val arr = org.json.JSONArray(dels)
                 for (i in 0 until arr.length()) pendingDeletions.add(arr.getString(i))

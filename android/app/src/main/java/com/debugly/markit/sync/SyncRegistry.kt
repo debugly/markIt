@@ -27,7 +27,9 @@ object SyncRegistry {
         store: DocumentStore,
         config: FolderSyncConfig
     ): SyncCoordinator {
-        val key = "${config.folderPath}|${config.serverUrl}|${config.remotePath}"
+        // Vault id first: two directories can each hold a folder of this name,
+        // and the cache must not hand one directory's coordinator to the other.
+        val key = "${config.vaultId}|${config.folderPath}|${config.serverUrl}|${config.remotePath}"
         coordinators[key]?.let { return it }
         return coordinators.getOrPut(key) {
             SyncCoordinator(
@@ -35,7 +37,8 @@ object SyncRegistry {
                 store,
                 WebDAVClient(config.serverUrl, config.username, config.password),
                 config.remotePath,
-                config.folderPath
+                config.folderPath,
+                config.vaultId
             )
         }
     }
@@ -97,6 +100,8 @@ object SyncRegistry {
     @Synchronized
     fun invalidate(folderPath: String? = null) {
         if (folderPath == null) coordinators.clear()
-        else coordinators.keys.filter { it.startsWith("$folderPath|") }.forEach { coordinators.remove(it) }
+        else coordinators.keys.filter {
+            it.substringAfter('|').startsWith("$folderPath|")
+        }.forEach { coordinators.remove(it) }
     }
 }

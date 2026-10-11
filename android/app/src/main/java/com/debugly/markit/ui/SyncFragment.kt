@@ -13,6 +13,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
 import com.debugly.markit.R
 import com.debugly.markit.storage.DocumentStore
+import com.debugly.markit.storage.VaultId
 import com.debugly.markit.sync.FolderSyncConfig
 import com.debugly.markit.sync.SyncConfigStore
 import com.debugly.markit.sync.SyncCoordinator
@@ -155,6 +156,9 @@ class SyncFragment : Fragment() {
     private fun buildConfig(autoSync: Boolean? = null): FolderSyncConfig {
         val existing = configs.forFolder(folderPath)
         return FolderSyncConfig(
+            // from the attached directory, so editing a folder in the new one
+            // writes a config belonging to it rather than editing the old one.
+            vaultId = existing?.vaultId ?: VaultId.current(requireContext()),
             folderPath = folderPath,
             serverUrl = urlField.text.toString().trim(),
             username = userField.text.toString().trim(),
