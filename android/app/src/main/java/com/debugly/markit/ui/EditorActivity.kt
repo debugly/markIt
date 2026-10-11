@@ -151,7 +151,17 @@ class EditorActivity : AppCompatActivity() {
      * only reached disk when the editor was left open -- so an idle editor sat
      * on unsaved text and no idle sync could ever fire.
      */
-    private fun save() {
+    /**
+     * Writes the note, then arranges for it to reach the server.
+     *
+     * [syncImmediately] is for the exit path. The write and the auto-sync both
+     * run on [io], so calling requestAutoSync and then flushing separately races
+     * them: the flush runs first, syncs the pre-save state, and then the write
+     * lands and arms a fresh idle timer that nothing cancels -- which looks
+     * exactly like the flush not having happened. Doing both inside the same
+     * task puts them in order by construction.
+     */
+    private fun save(syncImmediately: Boolean = false) {
         val store = resolveStore() ?: return
         val text = editor.text.toString()
         io.execute {
@@ -160,7 +170,11 @@ class EditorActivity : AppCompatActivity() {
                 // Fire-and-forget: the note is on the device either way, so a
                 // sync that cannot reach the server must not turn a successful
                 // save into a reported failure.
-                SyncRegistry.requestAutoSync(this@EditorActivity, store, path)
+                //
+                // syncNow cancels whatever idle timer was pending, so this is
+                // also the cancel the exit path needs.
+                if (syncImmediately) SyncRegistry.flushNow(this@EditorActivity, store, path)
+                else SyncRegistry.requestAutoSync(this@EditorActivity, store, path)
                 runOnUiThread {
                     dirty = false
                     statusBar.text = "已保存"
@@ -346,12 +360,15 @@ class EditorActivity : AppCompatActivity() {
         // where the user said they were done, so save now rather than leave it
         // to the timer.
         autoSave?.removeCallbacks(autoSaveTask)
-        if (dirty) save()
-        // Leaving the note is the moment the user expects their work to be
-        // backed up. The idle timer that covers "typed and walked away" is long
-        // enough that relying on it would mean closing the editor does nothing,
-        // so the exit path flushes instead of waiting it out.
-        resolveStore()?.let { SyncRegistry.flushNow(this, it, path) }
+        if (dirty) {
+            save(syncImmediately = true)
+        } else {
+            // Nothing to write, but a note edited earlier may still have an idle
+            // timer armed from the last keystroke. Leaving it would sync
+            // something the user already considers finished -- and closing the
+            // note is exactly the moment they expect it backed up.
+            resolveStore()?.let { SyncRegistry.flushNow(this, it, path) }
+        }
     }
 
     companion object {

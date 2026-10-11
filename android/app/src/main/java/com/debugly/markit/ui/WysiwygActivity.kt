@@ -287,14 +287,23 @@ class WysiwygActivity : Activity() {
         }
     }
 
-    private fun save() {
+    /**
+     * Writes the note, then arranges for it to reach the server.
+     *
+     * [syncImmediately] is for the exit path, and it has to happen inside the
+     * same task as the write: the write and the sync both go through [io], so
+     * flushing separately races them and leaves the flush syncing the pre-save
+     * state while a fresh idle timer gets armed behind it.
+     */
+    private fun save(syncImmediately: Boolean = false) {
         val store = resolveStore() ?: return
         val content = currentContent()
         statusBar.text = "保存中…"
         io.execute {
             try {
                 store.writeText(path, content)
-                SyncRegistry.requestAutoSync(this@WysiwygActivity, store, path)
+                if (syncImmediately) SyncRegistry.flushNow(this@WysiwygActivity, store, path)
+                else SyncRegistry.requestAutoSync(this@WysiwygActivity, store, path)
                 runOnUiThread {
                     dirty = false
                     statusBar.text = "已保存"
@@ -413,9 +422,10 @@ class WysiwygActivity : Activity() {
 
     override fun onPause() {
         super.onPause()
-        // Same reason as the source editor: leaving the note flushes the sync
-        // instead of waiting out the idle timer.
-        resolveStore()?.let { SyncRegistry.flushNow(this, it, path) }
+        // Same reason as the source editor: leaving the note flushes instead of
+        // waiting out the idle timer, and syncNow cancels the pending one.
+        if (dirty) save(syncImmediately = true)
+        else resolveStore()?.let { SyncRegistry.flushNow(this, it, path) }
     }
 
     /**
