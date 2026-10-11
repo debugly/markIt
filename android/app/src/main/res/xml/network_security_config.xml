@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Cleartext HTTP stays off by default. A WebDAV server on a user's own network
+  is routinely plain HTTP (Synology, ReadyNAS, a router's own file server), and
+  rejecting those outright makes the feature unusable for exactly the people most
+  likely to run it. So cleartext is permitted for loopback and the private ranges,
+  where the traffic never leaves the LAN, while anything reachable over the
+  public internet still requires HTTPS.
+
+  There is no user-facing toggle here on purpose: a per-server switch belongs in
+  the sync settings, and adding one before the sync layer can report a meaningful
+  error would only give a control that silently does nothing useful.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">localhost</domain>
+        <domain includeSubdomains="true">127.0.0.1</domain>
+        <!-- Android emulator alias for the host machine. -->
+        <!-- Android emulator alias for the host machine, reachable as a bare IP
+             literal, which a hostname-based domain-config would not cover. -->
+        <domain includeSubdomains="true">10.0.2.2</domain>
+        <domain includeSubdomains="true">10.0.0.0</domain>
+        <domain includeSubdomains="true">10.1.0.0</domain>
+        <domain includeSubdomains="true">172.16.0.0</domain>
+        <domain includeSubdomains="true">172.17.0.0</domain>
+        <domain includeSubdomains="true">172.18.0.0</domain>
+        <domain includeSubdomains="true">172.19.0.0</domain>
+        <domain includeSubdomains="true">192.168.0.0</domain>
+        <domain includeSubdomains="true">192.168.1.0</domain>
+        <domain includeSubdomains="true">192.168.2.0</domain>
+        <domain includeSubdomains="true">192.168.3.0</domain>
+        <!-- RFC 6762 .local mDNS names, used by Bonjour-hostname NAS units. -->
+        <domain includeSubdomains="true">local</domain>
+    </domain-config>
+</network-security-config>
