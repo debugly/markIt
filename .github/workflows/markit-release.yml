@@ -1,0 +1,166 @@
+name: markit-release
+# macOS 和 Android 用同一个 job，跑在 macOS runner 上：
+#
+# - Android 本来就需要 macOS 或 Linux runner；
+# - macOS 端必须用 macOS；
+# - 共用一次 checkout，产物落在同一个工作目录里，不用通过 artifact 来回搬。
+#
+# 两个平台共用一个版本号，也就共用一个 release。版本号的真相来源是 tag，
+# 不是 project.yml / build.gradle.kts 里手写的值 —— 那两处很容易漂移，
+# 真正发布时按 tag 打进去。
+permissions:
+  contents: write
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        type: string
+        description: 版本号，如 0.4.0 或 0.5.0-beta.1（留空则用当前分支名）
+        required: false
+      beta:
+        type: boolean
+        description: 这是预发布版本（tag 必须带预发布后缀）
+        default: false
+        required: false
+
+jobs:
+  build:
+    name: build-and-publish
+    runs-on: macos-15
+    env:
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        # 全历史 + tag：release 说明里的 Changelog 按上一个正式版 tag 生成
+        # compare 链接，默认的浅克隆拿不到 tag。
+        fetch-depth: 0
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: '17'
+
+    # macOS 镜像自带 Android SDK，但只有一份 platform 工具；compileSdk 36 要
+    # 自己装，命令行工具也得显式更新，否则 sdkmanager 可能找不到。
+    - name: Install Android SDK packages
+      run: |
+        set -euo pipefail
+        SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Library/Android/sdk}}"
+        test -d "$SDK" || { echo "::error::no Android SDK at $SDK"; exit 1; }
+        echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+        echo "$SDK/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+
+        sdkmanager --version
+        yes | sdkmanager --licenses > /dev/null || true
+        sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+        sdkmanager --list_installed | head -20 || true
+
+    - name: Install xcodegen
+      run: brew install xcodegen
+
+    # 版本号在编译前就算出来，但不烧进构建：mac 端通过 MARKIT_VERSION 传给
+    # build.sh（只影响 CURRENT_PROJECT_VERSION，也就是 build 号），Android 端
+    # 在编译后重命名产物。晚定的好处是 beta 序号取的是发布那一刻的现状。
+    - name: Resolve Version
+      run: |
+        set -euo pipefail
+        .github/scripts/resolve-version.sh "${{ inputs.tag }}" "${{ inputs.beta && '1' || '0' }}"
+
+    # ---- macOS ----
+    #
+    # 用仓库里的 build.sh，和本地开发走同一条路径。它默认会 rsync 到
+    # /Applications 并 open，那两件事在 runner 上都没意义（没有 GUI 会话），
+    # 所以用环境变量关掉，让产物留在工作目录里。
+    #
+    # dSYM 一起导出：崩溃栈只有配上 dSYM 才能还原成源码行号，事后补不出来。
+    - name: Build macOS App
+      run: |
+        set -euo pipefail
+        set -a; source release-constants.env; set +a
+        # build 号取构建当天的 MMdd，和本地 build.sh 的默认值一致：它只需要
+        # 每次构建变大，不需要和版本号有对应关系。
+        BUILD_NUMBER="$(date +%m%d)"
+        MARKIT_DEST="$PWD/dist" \
+        MARKIT_OPEN=0 \
+        MARKIT_KEEP_DSYM=1 \
+        MARKIT_BUILD="$BUILD_NUMBER" \
+          ./build.sh
+        ls -la dist
+
+    - name: Package macOS Zip
+      run: |
+        set -euo pipefail
+        set -a; source release-constants.env; set +a
+        cd dist
+        # dSYM 和 app 平级，不塞进 app 里面：用户解压之后要看到的是一个能直接
+        # 拖进「应用程序」的 app，而不是一堆给开发者看的符号文件。
+        zip -ryq "MarkIt-${VERSION}.zip" Markit.app Markit.app.dSYM
+        # zip 会保留符号链接，目标机解压时要跟随，不然 app 内部相对链接会断
+        zip -ryqT "MarkIt-${VERSION}.zip" Markit.app Markit.app.dSYM 2>/dev/null || true
+        ls -l
+
+    # ---- Android ----
+    #
+    # debug 签名：没有 release keystore 的话没法出正式签名包，而 debug 包
+    # 已经能装、能用全功能。要正式签名的话把 keystore 存成 repository secret，
+    # 这里换成 release 构型即可。
+    - name: Build Android APK
+      run: |
+        set -euo pipefail
+        chmod +x android/gradlew
+        cd android
+        ./gradlew :app:assembleRelease --no-daemon --stacktrace \
+          || {
+            echo "::error::release build failed; falling back to the debug APK so the release still ships something installable"
+            ./gradlew :app:assembleDebug --no-daemon --stacktrace
+          }
+
+    - name: Collect Android APK
+      run: |
+        set -euo pipefail
+        set -a; source release-constants.env; set +a
+        APK="$(ls android/app/build/outputs/apk/release/*.apk 2>/dev/null | head -1 \
+               || ls android/app/build/outputs/apk/debug/*.apk 2>/dev/null | head -1)"
+        test -n "$APK" || { echo "::error::no APK produced"; exit 1; }
+        echo "using $APK"
+        cp "$APK" "dist/MarkIt-${VERSION}.apk"
+        ls -l dist
+
+    - name: Generate Release Notes
+      run: |
+        set -euo pipefail
+        .github/scripts/generate-release-notes.sh release-constants.env release-notes.md
+
+    # 同名 tag 已存在就直接失败，这是故意的：覆盖掉别人刚发的产物属于不可逆
+    # 的事故。想要新版本就换一个 tag 重新 dispatch。
+    - name: Publish Release
+      run: |
+        set -euo pipefail
+        set -a; source release-constants.env; set +a
+
+        shopt -s nullglob
+        ASSETS=(dist/MarkIt-${VERSION}.zip dist/MarkIt-${VERSION}.apk)
+        shopt -u nullglob
+        test "${#ASSETS[@]}" -eq 2 || { echo "::error::expected 2 assets, got ${#ASSETS[@]}"; exit 1; }
+
+        echo "::notice::发布 ${TAG}：${#ASSETS[@]} 个资产"
+        PRERELEASE_FLAG=()
+        if [[ "$IS_BETA" == "1" ]]; then
+          PRERELEASE_FLAG=(--prerelease)
+        fi
+        gh release create "$TAG" --target "$GITHUB_REF_NAME" \
+          --title "MarkIt ${TAG}" --notes-file release-notes.md \
+          "${PRERELEASE_FLAG[@]}" "${ASSETS[@]}"
+
+    # artifact 是给 CI 自查用的（run 页面底部，需要登录 GitHub 才能下载）。
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: markit-release
+        path: dist/
+        retention-days: 30

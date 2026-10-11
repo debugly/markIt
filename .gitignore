@@ -4,3 +4,7 @@
 xcuserdata/
 DerivedData/
 build
+dist/
+release-constants.env
+release-notes.md
+scratch/
