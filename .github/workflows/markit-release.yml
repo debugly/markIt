@@ -157,13 +157,19 @@ jobs:
         test "${#ASSETS[@]}" -eq 2 || { echo "::error::expected 2 assets, got ${#ASSETS[@]}"; exit 1; }
 
         echo "::notice::发布 ${TAG}：${#ASSETS[@]} 个资产"
-        PRERELEASE_FLAG=()
+
+        # bash 3.2, which is what ships on the macOS runners, treats an empty
+        # array under `set -u` as an unbound variable -- so "${FLAGS[@]}" on a
+        # zero-length array aborts the step. An empty string expands to nothing
+        # at all, which is what a stable release wants to pass.
+        PRERELEASE_FLAG=""
         if [[ "$IS_BETA" == "1" ]]; then
-          PRERELEASE_FLAG=(--prerelease)
+          PRERELEASE_FLAG="--prerelease"
         fi
+
         gh release create "$TAG" --target "$GITHUB_REF_NAME" \
           --title "MarkIt ${TAG}" --notes-file release-notes.md \
-          "${PRERELEASE_FLAG[@]}" "${ASSETS[@]}"
+          $PRERELEASE_FLAG "${ASSETS[@]}"
 
     # artifact 是给 CI 自查用的（run 页面底部，需要登录 GitHub 才能下载）。
     - name: Upload artifacts
