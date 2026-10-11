@@ -10,9 +10,8 @@ import kotlinx.coroutines.withContext
 import org.xmlpull.v1.XmlPullParser
 import java.io.StringReader
 import java.io.UnsupportedEncodingException
-import java.net.HttpURLConnection
-import java.net.URL
-import java.net.URLEncoder
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 
 class WebDAVException(message: String) : Exception(message)
 
@@ -27,13 +26,45 @@ class WebDAVException(message: String) : Exception(message)
 class WebDAVClient(baseUrl: String, username: String, password: String) {
 
     private val base: String = if (baseUrl.endsWith("/")) baseUrl else "$baseUrl/"
+    private val USER_AGENT = "MarkIt/0.4.0 (Android)"
     private val auth: String
+
+    /**
+     * The client's host, parsed once so the proxy decision can be made before
+     * any request is built.
+     */
+    private val baseHost: String by lazy {
+        try {
+            base.trimEnd('/').substringAfter("://").substringBefore('/')
+                .substringBefore(':')
+        } catch (e: Exception) {
+            ""
+        }
+    }
+
+    private val http by lazy {
+        okhttp3.OkHttpClient.Builder()
+            .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+            .writeTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+            // A WebDAV server on the user's own LAN sits behind whatever system
+            // proxy or VPN the device is configured with, so a proxied request
+            // either stalls or comes back as a gateway error. Bypass it for
+            // private hosts. Public hosts are left on OkHttp's default, which is
+            // to honour the system selector -- the behaviour a user who set up a
+            // proxy on purpose expects.
+            .apply {
+                if (isPrivateHost(baseHost)) proxy(java.net.Proxy.NO_PROXY)
+            }
+            .build()
+    }
 
     init {
         val raw = "$username:$password"
         auth = "Basic " + try {
             Base64.encodeToString(raw.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
         } catch (e: UnsupportedEncodingException) {
+
             throw WebDAVException("编码认证信息失败")
         }
     }
@@ -77,66 +108,73 @@ class WebDAVClient(baseUrl: String, username: String, password: String) {
         return sb.toString()
     }
 
-    private fun request(url: String, method: String): HttpURLConnection {
-        val u = URL(url)
-        val conn = u.openConnection() as HttpURLConnection
-        conn.instanceFollowRedirects = true
-        conn.requestMethod = method
-        conn.setRequestProperty("Authorization", auth)
-        conn.setRequestProperty("User-Agent", "MarkIt/0.4.0 (Android)")
-        conn.connectTimeout = 15_000
-        conn.readTimeout = 30_000
-        return conn
-    }
 
-    /** Reads a response body, honouring gzip when the server compresses it. */
-    private fun body(conn: HttpURLConnection): String {
-        val encoding = conn.getHeaderField("Content-Encoding") ?: ""
-        val stream = if (encoding.contains("gzip", true)) {
-            java.util.zip.GZIPInputStream(conn.inputStream)
-        } else {
-            conn.inputStream
+    /**
+     * True for loopback and RFC1918 literals, i.e. hosts reachable only from
+     * inside the LAN a proxy cannot see.
+     */
+    private fun isPrivateHost(host: String): Boolean {
+        if (host == "localhost") return true
+        val parts = host.split('.')
+        if (parts.size != 4) return host.endsWith(".local")
+        val n = parts.mapNotNull { it.toIntOrNull() }
+        if (n.size != 4) return false
+        return when {
+            n[0] == 127 -> true
+            n[0] == 10 -> true
+            n[0] == 192 && n[1] == 168 -> true
+            n[0] == 172 && n[1] in 16..31 -> true
+            n[0] == 169 && n[1] == 254 -> true
+            else -> false
         }
-        return stream.use { it.readBytes().toString(Charsets.UTF_8) }
     }
 
-    private fun errorStream(conn: HttpURLConnection): String = try {
-        conn.errorStream?.use { it.readBytes().toString(Charsets.UTF_8) }.orEmpty()
-    } catch (e: Exception) {
-        ""
+
+    /**
+     * Runs one WebDAV request on the shared OkHttp client.
+     *
+     * Everything goes through here rather than through HttpURLConnection. The
+     * two stacks share a connection pool and a DNS cache but not a timeout
+     * policy, and mixing them meant an upload could complete while the next
+     * PROPFIND was already timing out against the old 30s read timeout. OkHttp
+     * also accepts arbitrary verbs natively, which HttpURLConnection does not:
+     * its setRequestMethod rejects PROPFIND, MKCOL, MOVE and PROPPATCH unless the
+     * private method field is poked with reflection.
+     */
+    private fun execute(
+        remotePath: String,
+        method: String,
+        isDirectory: Boolean = false,
+        headers: Map<String, String> = emptyMap(),
+        body: okhttp3.RequestBody? = null
+    ): okhttp3.Response {
+        val builder = okhttp3.Request.Builder()
+            .url(makeUrl(remotePath, isDirectory))
+            .method(method, body)
+            .header("Authorization", auth)
+            .header("User-Agent", USER_AGENT)
+        headers.forEach { (k, v) -> builder.header(k, v) }
+        return http.newCall(builder.build()).execute()
     }
 
     suspend fun testConnection(remotePath: String = ""): Boolean = withContext(Dispatchers.IO) {
-        val url = makeUrl(remotePath, isDirectory = true)
-        val conn = request(url, "PROPFIND")
-        val code: Int
-        try {
-            conn.setRequestProperty("Depth", "0")
-            conn.setRequestProperty("Content-Type", "application/xml; charset=utf-8")
-            code = conn.responseCode
-        } catch (e: Throwable) {
-            throw e
-        } finally {
-            conn.disconnect()
-        }
-
-        when (code) {
-            401 -> throw WebDAVException("身份验证失败，请检查用户名和密码")
-            // Reachable and authenticated; the folder just does not exist yet.
-            404 -> return@withContext true
-            in 200..299 -> return@withContext true
-            // Some servers (notably older Synology) refuse PROPFIND; fall back to
-            // OPTIONS and see whether it at least reports WebDAV support.
-            405 -> {
-                val opt = request(url, "OPTIONS")
-                return@withContext try {
-                    val dav = opt.getHeaderField("DAV").orEmpty()
-                    opt.responseCode in 200..299 || dav.contains("DAV", ignoreCase = true)
-                } finally {
-                    opt.disconnect()
+        execute(
+            remotePath, "PROPFIND", isDirectory = true,
+            headers = mapOf("Depth" to "0", "Content-Type" to "application/xml; charset=utf-8")
+        ).use { response ->
+            when (val code = response.code) {
+                401, 403 -> throw WebDAVException("身份验证失败，请检查用户名和密码")
+                // Reachable and authenticated; the folder just does not exist yet.
+                404 -> true
+                in 200..299 -> true
+                // Some servers (notably older Synology) refuse PROPFIND; fall
+                // back to OPTIONS and see whether it reports WebDAV support.
+                405 -> execute(remotePath, "OPTIONS", isDirectory = true).use { opt ->
+                    opt.code in 200..299 ||
+                        (opt.header("DAV") ?: "").contains("DAV", ignoreCase = true)
                 }
+                else -> throw WebDAVException("服务器错误 ($code)")
             }
-            else -> throw WebDAVException("服务器错误 ($code)")
         }
     }
 
@@ -146,23 +184,22 @@ class WebDAVClient(baseUrl: String, username: String, password: String) {
      * is exactly where a regex parse goes wrong.
      */
     suspend fun list(remotePath: String): List<FileNode> = withContext(Dispatchers.IO) {
-        val url = makeUrl(remotePath, isDirectory = true)
-        val conn = request(url, "PROPFIND")
         val nodes: MutableList<FileNode> = mutableListOf()
 
-        try {
-            conn.setRequestProperty("Depth", "1")
-            conn.setRequestProperty("Content-Type", "application/xml; charset=utf-8")
-            val code = conn.responseCode
-            if (code == 401) throw WebDAVException("身份验证失败，请检查用户名和密码")
-            if (code == 404) return@withContext emptyList()
-            if (code !in 200..299) {
-                throw WebDAVException(
-                    "服务器错误 ($code)" + parseErrorHint(code, errorStream(conn))
+        execute(
+            remotePath, "PROPFIND", isDirectory = true,
+            headers = mapOf("Depth" to "1", "Content-Type" to "application/xml; charset=utf-8")
+        ).use { response ->
+            when (val code = response.code) {
+                401, 403 -> throw WebDAVException("身份验证失败，请检查用户名和密码")
+                // A folder that does not exist yet is empty, not an error.
+                404 -> return@withContext emptyList()
+                !in 200..299 -> throw WebDAVException(
+                    "服务器错误 ($code)" + parseErrorHint(code, response.body?.string().orEmpty())
                 )
             }
 
-            val xml = body(conn)
+            val xml = response.body?.string().orEmpty()
             val parser = Xml.newPullParser()
             parser.setInput(StringReader(xml))
 
@@ -170,9 +207,9 @@ class WebDAVClient(baseUrl: String, username: String, password: String) {
             var isCollection = false
             var contentLength = 0L
             var lastModified = 0L
+            var currentTag = ""
 
             var event = parser.eventType
-            var currentTag = ""
             while (event != XmlPullParser.END_DOCUMENT) {
                 when (event) {
                     XmlPullParser.START_TAG -> {
@@ -201,8 +238,6 @@ class WebDAVClient(baseUrl: String, username: String, password: String) {
                 }
                 event = parser.next()
             }
-        } finally {
-            conn.disconnect()
         }
 
         nodes.sortedWith(compareByDescending<FileNode> { it.isDirectory }.thenBy { it.name.lowercase() })
@@ -269,45 +304,48 @@ class WebDAVClient(baseUrl: String, username: String, password: String) {
     }
 
     suspend fun download(remotePath: String): ByteArray = withContext(Dispatchers.IO) {
-        val conn = request(makeUrl(remotePath), "GET")
-        try {
-            when (val c = conn.responseCode) {
-                401 -> throw WebDAVException("身份验证失败")
+        execute(remotePath, "GET").use { response ->
+            when (response.code) {
+                401, 403 -> throw WebDAVException("身份验证失败")
                 404 -> throw WebDAVException("未找到文件: $remotePath")
-                in 200..299 -> conn.inputStream.use { it.readBytes() }
-                else -> throw WebDAVException("下载失败 ($c): $remotePath")
+                in 200..299 -> response.body?.bytes() ?: ByteArray(0)
+                else -> throw WebDAVException("下载失败 (${response.code}): $remotePath")
             }
-        } finally {
-            conn.disconnect()
         }
     }
 
     suspend fun upload(remotePath: String, data: ByteArray, contentType: String = "text/markdown; charset=utf-8") =
         withContext(Dispatchers.IO) {
-        val conn = request(makeUrl(remotePath), "PUT")
-        try {
-            conn.doOutput = true
-            conn.setRequestProperty("Content-Type", contentType)
-            conn.setFixedLengthStreamingMode(data.size)
-            conn.outputStream.use { it.write(data) }
-            val code = conn.responseCode
-            if (code !in 200..299) {
-                throw WebDAVException("上传失败 ($code): $remotePath" + parseErrorHint(code, errorStream(conn)))
+        val request = okhttp3.Request.Builder()
+            .url(makeUrl(remotePath))
+            .put(data.toRequestBody(contentType.toMediaType()))
+            .header("Authorization", auth)
+            .header("User-Agent", USER_AGENT)
+            .build()
+
+        http.newCall(request).execute().use { response ->
+            val body = response.body?.string().orEmpty()
+            if (!response.isSuccessful) {
+                throw WebDAVException(
+                    "上传失败 (${response.code}): $remotePath" +
+                        parseErrorHint(response.code, body)
+                )
             }
-        } finally {
-            conn.disconnect()
         }
     }
 
     suspend fun createDirectory(remotePath: String) = withContext(Dispatchers.IO) {
-        val conn = request(makeUrl(remotePath, isDirectory = true), "MKCOL")
-        try {
-            val code = conn.responseCode
-            // 405 here is the documented Synology case, not a hard failure.
-            if (code in 200..299 || code == 405) return@withContext
-            throw WebDAVException("创建目录失败 ($code): $remotePath")
-        } finally {
-            conn.disconnect()
+        val request = okhttp3.Request.Builder()
+            .url(makeUrl(remotePath, isDirectory = true))
+            .method("MKCOL", null)
+            .header("Authorization", auth)
+            .header("User-Agent", USER_AGENT)
+            .build()
+
+        http.newCall(request).execute().use { response ->
+            // 405 is the documented "already exists" case, notably on Synology.
+            if (response.isSuccessful || response.code == 405) return@use
+            throw WebDAVException("创建目录失败 (${response.code}): $remotePath")
         }
     }
 
@@ -322,29 +360,27 @@ class WebDAVClient(baseUrl: String, username: String, password: String) {
     }
 
     suspend fun delete(remotePath: String) = withContext(Dispatchers.IO) {
-        val conn = request(makeUrl(remotePath, isDirectory = true), "DELETE")
-        try {
-            val code = conn.responseCode
-            if (code == 404) return@withContext   // already gone
-            if (code !in 200..299) {
-                throw WebDAVException("删除失败 ($code): $remotePath")
+        execute(remotePath, "DELETE", isDirectory = true).use { response ->
+            when (val code = response.code) {
+                404 -> Unit   // already gone
+                in 200..299 -> Unit
+                else -> throw WebDAVException("删除失败 ($code): $remotePath")
             }
-        } finally {
-            conn.disconnect()
         }
     }
 
     suspend fun move(from: String, to: String) = withContext(Dispatchers.IO) {
-        val conn = request(makeUrl(from), "MOVE")
-        try {
-            conn.setRequestProperty("Destination", makeUrl(to, isDirectory = false))
-            conn.setRequestProperty("Overwrite", "T")
-            val code = conn.responseCode
+        execute(
+            from, "MOVE",
+            headers = mapOf(
+                "Destination" to makeUrl(to, isDirectory = false),
+                "Overwrite" to "T"
+            )
+        ).use { response ->
+            val code = response.code
             if (code !in 200..299) {
                 throw WebDAVException("移动失败 ($code): $from -> $to")
             }
-        } finally {
-            conn.disconnect()
         }
     }
 }
