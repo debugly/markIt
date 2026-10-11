@@ -199,12 +199,19 @@ class SyncCoordinator(
                     return@withLock Result.Failure("离线：本地文件保持可用，联网后自动同步")
                 }
 
-                val pushed = pushLocalChanges()
+                // One snapshot drives the whole sync. Listing again per phase
+                // would let a file edited mid-sync slip between them, and the
+                // manifest at the end is written from this same view.
+                val current = snapshotLocal()
+                val pushed = pushLocalChanges(current)
+                // Deletions go before the pull: a note deleted here must not be
+                // seen by the pull as a remote file worth downloading.
+                val deleted = pushDeletions(current)
                 val pulled = pullRemoteChanges()
+                val removed = pushPendingDeletions()
                 if (failedPush.isNotEmpty()) {
                     Log.w(TAG, "${failedPush.size} file(s) failed to upload and will retry next sync")
                 }
-                val removed = pushPendingDeletions()
 
                 manifest.clear()
                 manifest.putAll(snapshotLocal().filterKeys { it !in failedPush })
@@ -214,7 +221,11 @@ class SyncCoordinator(
 
                 saveState()
                 _status.value = Status.SYNCED
-                Log.i(TAG, "sync done for '$localScope': pushed=$pushed pulled=$pulled deleted=$removed")
+                Log.i(
+                    TAG,
+                    "sync done for '$localScope': pushed=$pushed " +
+                        "pulled=$pulled deleted=${deleted + removed}"
+                )
                 Result.Success
             } catch (e: Exception) {
                 val msg = e.message ?: "同步失败"
@@ -259,6 +270,42 @@ class SyncCoordinator(
     }
 
     /**
+     * Uploads deletions inferred by comparing the previous manifest against what
+     * is on disk now.
+     *
+     * This is the half of mirroring that pushLocalChanges does not cover. A file
+     * removed while the device was offline leaves no trace on the server, and a
+     * sync that only ever pushes additions resurrects it: the next pull sees it
+     * as a remote file the scope has not seen and downloads the note the user
+     * just deleted. Anything the manifest still remembers but the disk no longer
+     * has was deleted here and must go.
+     *
+     * Deletions made elsewhere are deliberately not pushed back. Those entries
+     * are simply pruned from the manifest by the snapshot at the end of the
+     * sync, which keeps deletion one-directional and stops two devices
+     * ping-ponging a file between them.
+     *
+     * The manifest entry is kept until the remote delete actually succeeds, so
+     * a network failure leaves the deletion queued rather than lost.
+     */
+    private suspend fun pushDeletions(current: Map<String, ManifestEntry>): Int {
+        val gone = manifest.keys.filter { !current.containsKey(it) }
+        var removed = 0
+        for (rel in gone) {
+            // The entry is all that is left of the path, so whether it was a
+            // folder is read from the manifest rather than from the disk.
+            val wasDirectory = manifest[rel]?.isDirectory ?: false
+            try {
+                client.delete(remotePathFor(rel), isDirectory = wasDirectory)
+                removed++
+            } catch (e: Exception) {
+                Log.w(TAG, "remote delete failed for $rel: ${e.message}")
+            }
+        }
+        return removed
+    }
+
+    /**
      * Uploads locally changed/new files inside the scope.
      *
      * Returns the count pushed. A file that fails to upload is remembered in
@@ -266,8 +313,7 @@ class SyncCoordinator(
      * transient timeout would make the file look clean forever and it would
      * never reach the server.
      */
-    private suspend fun pushLocalChanges(): Int {
-        val current = snapshotLocal()
+    private suspend fun pushLocalChanges(current: Map<String, ManifestEntry>): Int {
         var pushed = 0
 
         // PUT into a collection that does not exist yet is a 409, and a cold

@@ -10,6 +10,8 @@ import kotlinx.coroutines.withContext
 import org.xmlpull.v1.XmlPullParser
 import java.io.StringReader
 import java.io.UnsupportedEncodingException
+import java.util.concurrent.TimeUnit
+import okhttp3.OkHttpClient
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 
@@ -42,21 +44,22 @@ class WebDAVClient(baseUrl: String, username: String, password: String) {
         }
     }
 
-    private val http by lazy {
-        okhttp3.OkHttpClient.Builder()
-            .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-            .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
-            .writeTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
-            // A WebDAV server on the user's own LAN sits behind whatever system
-            // proxy or VPN the device is configured with, so a proxied request
-            // either stalls or comes back as a gateway error. Bypass it for
-            // private hosts. Public hosts are left on OkHttp's default, which is
-            // to honour the system selector -- the behaviour a user who set up a
-            // proxy on purpose expects.
-            .apply {
-                if (isPrivateHost(baseHost)) proxy(java.net.Proxy.NO_PROXY)
-            }
-            .build()
+    private val http: OkHttpClient = buildClient()
+
+    private fun buildClient(): OkHttpClient {
+        val builder = OkHttpClient.Builder()
+        builder.connectTimeout(15, TimeUnit.SECONDS)
+        builder.readTimeout(60, TimeUnit.SECONDS)
+        builder.writeTimeout(60, TimeUnit.SECONDS)
+        // A WebDAV server on the user's own LAN sits behind whatever system
+        // proxy or VPN the device is configured with, so a proxied request either
+        // stalls or comes back as a gateway error. Bypass it for private hosts.
+        // Public hosts stay on OkHttp's default, which honours the system
+        // selector -- what a user who set up a proxy deliberately expects.
+        if (isPrivateHost(baseHost)) {
+            builder.proxy(java.net.Proxy.NO_PROXY)
+        }
+        return builder.build()
     }
 
     init {
@@ -321,6 +324,15 @@ class WebDAVClient(baseUrl: String, username: String, password: String) {
             .put(data.toRequestBody(contentType.toMediaType()))
             .header("Authorization", auth)
             .header("User-Agent", USER_AGENT)
+            // OkHttp attaches "Expect: 100-continue" to any request carrying a
+            // body and then waits for the server to invite the body before
+            // writing a single byte. Plenty of servers never answer that interim
+            // response -- wsgidav behind wsgiref does not, and that is a very
+            // common home-lab setup -- so the upload sat there until writeTimeout
+            // fired and the PUT timed out with the body never having left the
+            // device. Sending it straight away is what curl does, and it costs
+            // nothing on servers that would have replied 100.
+            .header("Expect", "")
             .build()
 
         http.newCall(request).execute().use { response ->
@@ -359,8 +371,16 @@ class WebDAVClient(baseUrl: String, username: String, password: String) {
         }
     }
 
-    suspend fun delete(remotePath: String) = withContext(Dispatchers.IO) {
-        execute(remotePath, "DELETE", isDirectory = true).use { response ->
+    /**
+     * Removes a file or a collection.
+     *
+     * The trailing slash is not cosmetic: RFC 4918 requires it to identify a
+     * collection, and several servers refuse a DELETE of a collection without
+     * one. Callers therefore say which they mean rather than having the path
+     * guessed from its shape.
+     */
+    suspend fun delete(remotePath: String, isDirectory: Boolean = false) = withContext(Dispatchers.IO) {
+        execute(remotePath, "DELETE", isDirectory = isDirectory).use { response ->
             when (val code = response.code) {
                 404 -> Unit   // already gone
                 in 200..299 -> Unit
