@@ -155,8 +155,6 @@ class MainActivity : AppCompatActivity() {
             val nodes = try { s.list(currentPath) } catch (e: Exception) { emptyList() }
             runOnUiThread {
                 allNodes = nodes
-                emptyState.text = "此文件夹为空"
-                emptyState.visibility = if (nodes.isEmpty()) View.VISIBLE else View.GONE
                 rebuildRows()
             }
         }
@@ -179,6 +177,28 @@ class MainActivity : AppCompatActivity() {
             files.forEach { rows.add(Row.Entry(it, null, isPendingSync = isPendingSync(it))) }
         }
         adapter.submit(rows)
+
+        // rebuildRows is also the path a filter takes, and load() is not called
+        // again, so the empty state has to be updated here too. Without it a
+        // filter matching nothing left a blank screen with no indication that
+        // the app was alive and simply had no match.
+        updateEmptyState(dirs.isEmpty() && files.isEmpty())
+    }
+
+    /**
+     * Shows the placeholder when there is nothing to list.
+     *
+     * The wording distinguishes an empty folder from an empty search: "no
+     * files" and "nothing matched" call for different actions from the user,
+     * and showing the wrong one sends them looking for files that are there.
+     */
+    private fun updateEmptyState(nothingToShow: Boolean) {
+        if (!nothingToShow) {
+            emptyState.visibility = View.GONE
+            return
+        }
+        emptyState.text = if (filter.isBlank()) "此文件夹为空" else "没有匹配「$filter」的文件"
+        emptyState.visibility = View.VISIBLE
     }
 
     /**
