@@ -109,12 +109,18 @@
         <TextView android:id="@+id/syncStatus" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:layout_marginTop="14dp"
             android:layout_marginBottom="12dp" android:textSize="12sp" android:textColor="#8A8A8E"
-            android:text="尚未同步" />
+            android:text="此文件夹未设置同步" />
 
         <TextView android:id="@+id/btnSyncNow" android:layout_width="match_parent"
             android:layout_height="48dp" android:background="@drawable/bg_search"
             android:gravity="center" android:text="立即同步"
             android:textSize="15sp" android:textStyle="bold" android:textColor="#34C759" />
+
+        <TextView android:id="@+id/btnRemoveSync" android:layout_width="match_parent"
+            android:layout_height="46dp" android:layout_marginTop="10dp"
+            android:background="@drawable/bg_search" android:gravity="center"
+            android:text="停止同步此文件夹" android:textSize="14sp"
+            android:textColor="#FF3B30" android:visibility="gone" />
 
     </LinearLayout>
     </ScrollView>

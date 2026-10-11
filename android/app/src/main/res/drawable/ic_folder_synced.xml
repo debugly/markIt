@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Folder carrying a white badge with a sync glyph, so a folder that has
+     WebDAV sync configured is distinguishable from an ordinary one at list-row
+     size. The glyph is deliberately chunky: at 28dp a thin stroke turns to
+     noise, and it is kept well inside the 24dp viewport so nothing is clipped
+     by the badge edge. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+
+    <!-- folder body -->
+    <path android:fillColor="#D9B778"
+        android:pathData="M1.5,5.2C1.5,4.3 2.3,3.5 3.2,3.5h4.4c0.5,0 1,0.2 1.4,0.6l1.5,1.6h10.3c0.9,0 1.7,0.8 1.7,1.7v9.1c0,1 -0.8,1.7 -1.7,1.7H3.2c-0.9,0 -1.7,-0.7 -1.7,-1.6V5.2z" />
+
+    <!-- badge disc, centred in the lower right and inside the viewport -->
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M17.6,15.4m-5.4,0a5.4,5.4 0 1,0 10.8,0a5.4,5.4 0 1,0 -10.8,0" />
+
+    <!-- two stacked arrows: top points right, bottom points left -->
+    <path android:fillColor="#0A84FF"
+        android:pathData="M14.2,14.2h4.1v-1.0l1.7,1.7l-1.7,1.7v-1.0h-4.1c-0.6,0 -1.1,0.4 -1.2,1.0h-0.9C12.1,15.2 13.0,14.2 14.2,14.2z" />
+    <path android:fillColor="#0A84FF"
+        android:pathData="M21.0,16.6h-4.1v1.0l-1.7,-1.7l1.7,-1.7v1.0h4.1c0.6,0 1.1,-0.4 1.2,-1.0h0.9C23.1,15.6 22.2,16.6 21.0,16.6z" />
+</vector>

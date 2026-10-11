@@ -17,6 +17,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.debugly.markit.R
 import com.debugly.markit.model.FileNode
 import com.debugly.markit.storage.DocumentStore
+import com.debugly.markit.sync.SyncConfigStore
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import java.util.concurrent.Executors
@@ -36,6 +37,7 @@ class MainActivity : AppCompatActivity() {
 
     // Listing the vault must stay off the main thread.
     private val io = Executors.newSingleThreadExecutor()
+    private val syncConfigs by lazy { SyncConfigStore(this) }
 
     private val pickTree = registerForActivityResult(
         ActivityResultContracts.OpenDocumentTree()
@@ -73,7 +75,6 @@ class MainActivity : AppCompatActivity() {
         findViewById<BottomNavigationView>(R.id.bottomBar).setOnItemSelectedListener { item ->
             when (item.itemId) {
                 R.id.nav_files -> { showFiles(); true }
-                R.id.nav_sync -> { showSync(); true }
                 R.id.nav_settings -> { showSettings(); true }
                 else -> false
             }
@@ -113,9 +114,9 @@ class MainActivity : AppCompatActivity() {
         load()
     }
 
-    private fun showSync() {
+    private fun showSync(folderPath: String) {
         supportFragmentManager.beginTransaction()
-            .replace(R.id.rootContainer, SyncFragment())
+            .replace(R.id.rootContainer, SyncFragment.forFolder(folderPath))
             .addToBackStack("sync")
             .commitAllowingStateLoss()
         showChrome(false)
@@ -165,7 +166,7 @@ class MainActivity : AppCompatActivity() {
 
         if (dirs.isNotEmpty() && filter.isBlank()) {
             rows.add(Row.Section("目录"))
-            dirs.forEach { rows.add(Row.Entry(it, null)) }
+            dirs.forEach { rows.add(Row.Entry(it, null, syncConfigs.isSynced(it.path))) }
         }
         if (files.isNotEmpty()) {
             rows.add(Row.Section(if (filter.isBlank()) "文件" else "匹配 ${files.size} 项"))
@@ -191,13 +192,22 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showNodeActions(node: FileNode) {
+        // Sync is a folder-level concern, so it only appears on directories. A
+        // folder that already has a config says so in the label and can remove it.
+        val options = if (node.isDirectory) {
+            val configured = syncConfigs.isSynced(node.path)
+            arrayOf("重命名", "删除", if (configured) "同步设置（已开启）" else "同步设置")
+        } else {
+            arrayOf("重命名", "删除", "在外部应用中打开")
+        }
+
         AlertDialog.Builder(this)
             .setTitle(node.name)
-            .setItems(arrayOf("重命名", "删除", "在外部应用中打开")) { _, which ->
+            .setItems(options) { _, which ->
                 when (which) {
                     0 -> promptRename(node)
                     1 -> confirmDelete(node)
-                    2 -> openExternally(node)
+                    2 -> if (node.isDirectory) showSync(node.path) else openExternally(node)
                 }
             }
             .show()

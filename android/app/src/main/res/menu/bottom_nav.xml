@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <menu xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:id="@+id/nav_files" android:title="文件" android:icon="@drawable/ic_nav_files" />
-    <item android:id="@+id/nav_sync" android:title="同步" android:icon="@drawable/ic_nav_sync" />
     <item android:id="@+id/nav_settings" android:title="设置" android:icon="@drawable/ic_nav_settings" />
 </menu>

@@ -14,7 +14,12 @@ import java.util.Date
 /** One row: either a section header or a file/folder. */
 sealed class Row {
     data class Section(val title: String) : Row()
-    data class Entry(val node: FileNode, val badge: String?) : Row()
+    data class Entry(
+        val node: FileNode,
+        val badge: String?,
+        /** True when this folder has WebDAV sync configured. */
+        val isSynced: Boolean = false
+    ) : Row()
 }
 
 class FileListAdapter(
@@ -46,7 +51,7 @@ class FileListAdapter(
     override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
         when (val row = rows[position]) {
             is Row.Section -> (holder as SectionHolder).bind(row.title)
-            is Row.Entry -> (holder as EntryHolder).bind(row.node, row.badge)
+            is Row.Entry -> (holder as EntryHolder).bind(row.node, row.badge, row.isSynced)
         }
     }
 
@@ -63,14 +68,18 @@ class FileListAdapter(
     }
 
     inner class EntryHolder(view: View) : RecyclerView.ViewHolder(view) {
-        private val icon: TextView = view.findViewById(R.id.fileIcon)
+        private val icon: android.widget.ImageView = view.findViewById(R.id.fileIcon)
         private val name: TextView = view.findViewById(R.id.fileName)
         private val meta: TextView = view.findViewById(R.id.fileMeta)
         private val badge: TextView = view.findViewById(R.id.syncBadge)
         private val chevron: TextView = view.findViewById(R.id.chevron)
 
-        fun bind(node: FileNode, badgeText: String?) {
-            icon.text = iconFor(node)
+        fun bind(node: FileNode, badgeText: String?, isSynced: Boolean) {
+            icon.setImageResource(iconFor(node, isSynced))
+            icon.setBackgroundResource(
+                if (node.isDirectory) R.drawable.bg_icon_folder
+                else R.drawable.bg_icon_file
+            )
             name.text = node.displayName
             meta.text = metaFor(node)
 
@@ -86,14 +95,15 @@ class FileListAdapter(
             }
         }
 
-        private fun iconFor(node: FileNode): String = when {
-            node.isDirectory -> "📁"
+        private fun iconFor(node: FileNode, isSynced: Boolean): Int = when {
+            node.isDirectory && isSynced -> R.drawable.ic_folder_synced
+            node.isDirectory -> R.drawable.ic_folder
             else -> when (SupportedFileType.detect(node.name)) {
-                SupportedFileType.MARKDOWN -> "M"
-                SupportedFileType.IMAGE -> "🖼"
-                SupportedFileType.HTML -> "◈"
-                SupportedFileType.TEXT -> "≡"
-                SupportedFileType.OTHER -> "?"
+                SupportedFileType.MARKDOWN -> R.drawable.ic_type_markdown
+                SupportedFileType.IMAGE -> R.drawable.ic_type_image
+                SupportedFileType.HTML -> R.drawable.ic_type_html
+                SupportedFileType.TEXT -> R.drawable.ic_type_text
+                SupportedFileType.OTHER -> R.drawable.ic_type_other
             }
         }
 
