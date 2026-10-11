@@ -4,7 +4,11 @@ import android.content.Context
 import android.util.Log
 import com.debugly.markit.model.FileNode
 import com.debugly.markit.storage.DocumentStore
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -59,6 +63,9 @@ class SyncCoordinator(
     }
 
     private val lock = Mutex()
+
+    /** Outlives whatever called markModified, so closing the editor cannot cancel a sync. */
+    private val autoScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val _status = MutableStateFlow(Status.SYNCED)
     val status: StateFlow<Status> = _status
 
@@ -145,15 +152,39 @@ class SyncCoordinator(
         }
     }
 
-    /** Call after any local write; coalesces bursts of edits into one sync. */
-    suspend fun markModified(path: String) {
+    private var pendingJob: Job? = null
+
+    /**
+     * Call after any local write. Fires a sync once the writes stop.
+     *
+     * Each call cancels the job the previous one started, so a burst of saves
+     * collapses into a single sync that runs [DEBOUNCE_MS] after the last of
+     * them. Without the cancellation every call would sleep and then sync,
+     * which turns one editing session into a queue of redundant round trips --
+     * and several of those racing each other is exactly how the manifest ends
+     * up describing a state the server never saw.
+     *
+     * The job runs in [autoScope] rather than the caller's, so it is not
+     * cancelled by the editor closing the moment it saves.
+     */
+    fun markModified(path: String) {
         _status.value = Status.MODIFIED
-        try {
+        pendingJob?.cancel()
+        pendingJob = autoScope.launch {
             delay(DEBOUNCE_MS)
             sync()
-        } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e
         }
+    }
+
+    /**
+     * Runs [sync] straight away, skipping the debounce.
+     *
+     * For explicit user actions -- "sync now", or leaving the editor -- where
+     * waiting out the timer would look like the tap did nothing.
+     */
+    fun syncNow() {
+        pendingJob?.cancel()
+        pendingJob = autoScope.launch { sync() }
     }
 
     fun recordDeletion(path: String) {
@@ -208,7 +239,7 @@ class SyncCoordinator(
                 // seen by the pull as a remote file worth downloading.
                 val deleted = pushDeletions(current)
                 val pulled = pullRemoteChanges()
-                val removed = pushPendingDeletions()
+                val stillPending = pushPendingDeletions()
                 if (failedPush.isNotEmpty()) {
                     Log.w(TAG, "${failedPush.size} file(s) failed to upload and will retry next sync")
                 }
@@ -216,15 +247,19 @@ class SyncCoordinator(
                 manifest.clear()
                 manifest.putAll(snapshotLocal().filterKeys { it !in failedPush })
 
-                // Deletions that reached the server drop off the list.
-                pendingDeletions.clear()
+                // Only the deletions that actually reached the server drop off.
+                // Clearing the whole list would discard a rename recorded while
+                // this sync was running -- the old name would stay on the server
+                // forever, and the next pull would fetch the file the user just
+                // renamed away from.
+                pendingDeletions.retainAll(stillPending)
 
                 saveState()
                 _status.value = Status.SYNCED
                 Log.i(
                     TAG,
                     "sync done for '$localScope': pushed=$pushed " +
-                        "pulled=$pulled deleted=${deleted + removed}"
+                        "pulled=$pulled deleted=$deleted pendingDelete=${stillPending.size}"
                 )
                 Result.Success
             } catch (e: Exception) {
@@ -400,19 +435,27 @@ class SyncCoordinator(
     private fun localPathFor(rel: String): String =
         if (localScope.isEmpty()) rel else "$localScope/$rel"
 
-    /** Applies deletions recorded offline, now that the server is reachable. */
-    private suspend fun pushPendingDeletions(): Int {
-        var removed = 0
+    /**
+     * Applies deletions recorded offline, now that the server is reachable.
+     *
+     * Returns the paths that are still outstanding -- the ones whose remote
+     * delete failed. They stay queued for the next sync rather than being
+     * forgotten, since a deletion that is silently dropped leaves the file on
+     * the server and the next pull brings it straight back.
+     */
+    private suspend fun pushPendingDeletions(): Set<String> {
+        val stillPending = mutableSetOf<String>()
         for (rel in pendingDeletions.toList()) {
+            val isDirectory = manifest[rel]?.isDirectory ?: false
             try {
-                client.delete(remotePathFor(rel))
+                client.delete(remotePathFor(rel), isDirectory = isDirectory)
                 pendingDeletions.remove(rel)
-                removed++
             } catch (e: Exception) {
                 Log.w(TAG, "remote delete failed for $rel: ${e.message}")
+                stillPending.add(rel)
             }
         }
-        return removed
+        return stillPending
     }
 
     /**

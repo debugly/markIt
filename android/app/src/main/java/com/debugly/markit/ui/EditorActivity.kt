@@ -14,6 +14,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import com.debugly.markit.R
 import com.debugly.markit.storage.DocumentStore
+import com.debugly.markit.sync.SyncRegistry
 import com.debugly.markit.sync.SyncConfigStore
 import com.debugly.markit.sync.SyncCoordinator
 import com.debugly.markit.sync.WebDAVClient
@@ -135,6 +136,10 @@ class EditorActivity : AppCompatActivity() {
         io.execute {
             try {
                 store.writeText(path, text)
+                // Fire-and-forget: the note is on the device either way, so a
+                // sync that cannot reach the server must not turn a successful
+                // save into a reported failure.
+                SyncRegistry.requestAutoSync(this@EditorActivity, store, path)
                 runOnUiThread {
                     dirty = false
                     statusBar.text = "已保存"
@@ -184,7 +189,7 @@ class EditorActivity : AppCompatActivity() {
                             runOnUiThread { showRenameFailed("无法重命名 $newName") }
                             return@execute
                         }
-                        recordRenameForSync(path)
+                        recordRenameForSync(path, newPath, store)
                         runOnUiThread {
                             path = newPath
                             titleText.text = newName
@@ -216,25 +221,25 @@ class EditorActivity : AppCompatActivity() {
      * no matching config there is nothing to tell, and the rename stays local --
      * which is correct, because nothing was ever going to sync that file.
      */
-    private fun recordRenameForSync(oldPath: String) {
-        val treeUri = getSharedPreferences("markit", MODE_PRIVATE)
-            .getString("tree_uri", null) ?: return
+    /**
+     * Tells the sync that a rename happened, and asks for a sync to follow.
+     *
+     * Both halves are needed. The old path has to be marked deleted or the sync
+     * treats the new name as a fresh file and the server ends up holding both;
+     * and the new path needs a sync or the rename never reaches the server at
+     * all. They go through the shared registry so the editor and the file list
+     * share one debounce timer and one manifest rather than racing two copies.
+     */
+    private fun recordRenameForSync(oldPath: String, newPath: String, store: DocumentStore) {
         val folder = oldPath.substringBeforeLast('/', "")
         val config = SyncConfigStore(this).forFolder(folder) ?: return
         if (!config.isConfigured) return
 
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                SyncCoordinator(
-                    this@EditorActivity,
-                    DocumentStore(this@EditorActivity, android.net.Uri.parse(treeUri)),
-                    WebDAVClient(config.serverUrl, config.username, config.password),
-                    config.remotePath,
-                    config.folderPath
-                ).recordDeletion(oldPath)
-            } catch (e: Exception) {
-                Log.w("MarkItEditor", "could not record rename: ${e.message}")
-            }
+        try {
+            SyncRegistry.coordinatorFor(this, store, config).recordDeletion(oldPath)
+            SyncRegistry.requestAutoSync(this, store, newPath)
+        } catch (e: Exception) {
+            Log.w("MarkItEditor", "could not record rename: ${e.message}")
         }
     }
 

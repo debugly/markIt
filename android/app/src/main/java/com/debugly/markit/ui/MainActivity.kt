@@ -22,6 +22,7 @@ import com.debugly.markit.storage.DocumentStore
 import com.debugly.markit.sync.FolderSyncConfig
 import com.debugly.markit.sync.SyncConfigStore
 import com.debugly.markit.sync.SyncCoordinator
+import com.debugly.markit.sync.SyncRegistry
 import com.debugly.markit.sync.WebDAVClient
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.android.material.floatingactionbutton.FloatingActionButton
@@ -233,6 +234,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun promptRename(node: FileNode) {
+        // Resolved up front: this runs inside an io.execute below, where a dialog
+        // is long gone and the folder on screen may be a different one.
+        val folder = if (node.isDirectory) node.path else node.path.substringBeforeLast('/', "")
+        val config = syncConfigs.forFolder(folder)?.takeIf { it.isConfigured }
         val input = EditText(this).apply {
             setText(node.name)
             setSelection(node.name.length)
@@ -246,6 +251,17 @@ class MainActivity : AppCompatActivity() {
                 if (newName.isEmpty() || newName == node.name) return@setPositiveButton
                 io.execute {
                     s.rename(node.path, newName)
+                    val newPath = if (node.path.contains('/')) {
+                        node.path.substringBeforeLast('/') + "/" + newName
+                    } else {
+                        newName
+                    }
+                    // The old path has to be marked deleted, or the sync treats
+                    // the new name as a fresh file and the server ends up holding
+                    // both. recordDeletion does that; the auto-sync then uploads
+                    // the new name and deletes the old one in one pass.
+                    config?.let { recordDeletionForSync(node.path, it) }
+                    requestAutoSync(newPath)
                     runOnUiThread { load() }
                 }
             }
@@ -282,22 +298,14 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    private fun coordinatorFor(config: FolderSyncConfig): SyncCoordinator? {
+        val st = store ?: return null
+        return SyncRegistry.coordinatorFor(this, st, config)
+    }
+
     /** Records a local deletion so the next sync removes it from the server. */
     private fun recordDeletionForSync(path: String, config: FolderSyncConfig) {
-        val uri = getSharedPreferences("markit", MODE_PRIVATE).getString("tree_uri", null)
-            ?: return
-        val st = store ?: return
-        try {
-            SyncCoordinator(
-                this,
-                st,
-                WebDAVClient(config.serverUrl, config.username, config.password),
-                config.remotePath,
-                config.folderPath
-            ).recordDeletion(path)
-        } catch (e: Exception) {
-            Log.w("MarkIt", "could not record deletion: ${e.message}")
-        }
+        coordinatorFor(config)?.recordDeletion(path)
     }
 
     private fun openExternally(node: FileNode) {
@@ -341,6 +349,7 @@ class MainActivity : AppCompatActivity() {
                 val s = store ?: return@setPositiveButton
                 io.execute {
                     s.writeText(path, "")
+                    requestAutoSync(path)
                     runOnUiThread { load() }
                 }
             }
@@ -360,10 +369,20 @@ class MainActivity : AppCompatActivity() {
                 val s = store ?: return@setPositiveButton
                 io.execute {
                     s.createDirectory(path)
+                    requestAutoSync(path)
                     runOnUiThread { load() }
                 }
             }
             .setNegativeButton("取消", null)
             .show()
     }
+    private fun requestAutoSync(path: String) {
+        val st = store ?: return
+        try {
+            SyncRegistry.requestAutoSync(this, st, path)
+        } catch (e: Exception) {
+            Log.w("MarkIt", "auto-sync request failed for $path: ${e.message}")
+        }
+    }
+
 }

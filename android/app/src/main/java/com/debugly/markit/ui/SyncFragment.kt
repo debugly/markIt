@@ -16,6 +16,7 @@ import com.debugly.markit.storage.DocumentStore
 import com.debugly.markit.sync.FolderSyncConfig
 import com.debugly.markit.sync.SyncConfigStore
 import com.debugly.markit.sync.SyncCoordinator
+import com.debugly.markit.sync.SyncRegistry
 import com.debugly.markit.sync.WebDAVClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -45,6 +46,7 @@ class SyncFragment : Fragment() {
     private lateinit var statusText: TextView
     private lateinit var titleText: TextView
     private lateinit var removeButton: TextView
+    private lateinit var autoSyncSwitch: androidx.appcompat.widget.SwitchCompat
     private var backCallback: androidx.activity.OnBackPressedCallback? = null
 
     private val configs by lazy { SyncConfigStore(requireContext()) }
@@ -67,6 +69,7 @@ class SyncFragment : Fragment() {
         statusText = v.findViewById(R.id.syncStatus)
         titleText = v.findViewById(R.id.syncTitle)
         removeButton = v.findViewById(R.id.btnRemoveSync)
+        autoSyncSwitch = v.findViewById(R.id.swAutoSync)
 
         val name = folderPath.substringAfterLast('/').ifEmpty { "根目录" }
         titleText.text = name
@@ -91,6 +94,24 @@ class SyncFragment : Fragment() {
         v.findViewById<ImageButton>(R.id.syncBack).setOnClickListener { goBack() }
         v.findViewById<TextView>(R.id.btnTest).setOnClickListener { testConnection() }
         v.findViewById<TextView>(R.id.btnSyncNow).setOnClickListener { runSync() }
+
+        // Toggling this has to take effect on the coordinators already in use,
+        // not just on the stored config: a coordinator is cached for the life of
+        // the process, so it would otherwise keep auto-syncing a folder the user
+        // just switched off.
+        // Set before the listener, so binding the stored value does not look
+        // like the user flipping the switch.
+        autoSyncSwitch.isChecked = configs.forFolder(folderPath)?.autoSyncEnabled ?: true
+        autoSyncSwitch.setOnCheckedChangeListener { button, checked ->
+                if (!button.isPressed) return@setOnCheckedChangeListener
+                val current = formConfig()
+                if (!current.isConfigured) return@setOnCheckedChangeListener
+                persist(current.copy(autoSyncEnabled = checked))
+                if (!checked) {
+                    SyncRegistry.invalidate(folderPath)
+                    statusText.text = "已关闭自动同步"
+                }
+            }
         removeButton.setOnClickListener { confirmRemove() }
 
         return v
@@ -129,7 +150,9 @@ class SyncFragment : Fragment() {
      * Reads the form into a config. Callers decide whether to persist it, so a
      * failed connection test does not overwrite a working saved config.
      */
-    private fun formConfig(): FolderSyncConfig {
+    private fun formConfig(): FolderSyncConfig = buildConfig()
+
+    private fun buildConfig(autoSync: Boolean? = null): FolderSyncConfig {
         val existing = configs.forFolder(folderPath)
         return FolderSyncConfig(
             folderPath = folderPath,
@@ -137,7 +160,10 @@ class SyncFragment : Fragment() {
             username = userField.text.toString().trim(),
             password = passField.text.toString(),
             remotePath = pathField.text.toString().trim(),
-            autoSyncEnabled = existing?.autoSyncEnabled ?: true,
+            // autoSync overrides the stored value, because the switch is the
+            // only thing that knows about it. Reading it back from storage here
+            // would undo the user's tap on the very next form read.
+            autoSyncEnabled = autoSync ?: existing?.autoSyncEnabled ?: true,
             lastSyncTime = existing?.lastSyncTime ?: 0
         )
     }
@@ -217,15 +243,17 @@ class SyncFragment : Fragment() {
         scope.launch {
             val message = withContext(Dispatchers.IO) {
                 try {
-                    val coordinator = SyncCoordinator(
+                    // The shared coordinator, not a fresh one: a second
+                    // instance would carry its own manifest copy and race any
+                    // auto-sync already in flight over the same files.
+                    val coordinator = SyncRegistry.coordinatorFor(
                         requireContext(),
                         DocumentStore(requireContext(), uri),
-                        WebDAVClient(config.serverUrl, config.username, config.password),
-                        config.remotePath,
-                        // Scope the local side to this folder too: configuring
-                        // drafts must not upload or delete posts.
-                        folderPath
+                        config
                     )
+                    // sync() keeps failed deletions queued rather than
+                    // clearing the list, so an explicit tap cannot swallow a
+                    // rename recorded a moment ago.
                     when (val r = coordinator.sync()) {
                         is SyncCoordinator.Result.Success -> {
                             persist(config.copy(lastSyncTime = System.currentTimeMillis()))
