@@ -74,6 +74,14 @@ class WysiwygActivity : Activity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_wysiwyg)
 
+        // Android 15 forces edge to edge, so the toolbar and the status strip
+        // would otherwise sit under the system bars. This screen carries its own
+        // chrome and the editor canvas is meant to run full height between them,
+        // so the bars are inset rather than the whole layout.
+        Insets.goEdgeToEdge(this)
+        Insets.apply(findViewById(R.id.topBar), top = true, horizontal = true)
+        Insets.apply(findViewById(R.id.statusBar), bottom = true, horizontal = true)
+
         path = intent.getStringExtra(EXTRA_PATH).orEmpty()
         titleText = findViewById(R.id.titleText)
         statusBar = findViewById(R.id.statusBar)
@@ -93,6 +101,14 @@ class WysiwygActivity : Activity() {
         // Activity's dark window show through, which is what made a correctly
         // rendered note look like dark text on a dark background.
         web.setBackgroundColor(Color.parseColor("#0F172A"))
+        // The toolbar is light but the page behind the status bar is dark, so
+        // the system icons have to flip to light or they vanish. This has to
+        // hang off the decor view: setOnApplyWindowInsetsListener replaces any
+        // listener already on a view, so pointing it at the toolbar would
+        // silently swap out the one applying the toolbar's status-bar padding --
+        // the toolbar would slide back under the clock and the toolbar would be
+        // left un-padded with no error anywhere.
+        Insets.useLightIconsOn(this, window.decorView, light = true)
         // console.log from the page is only visible with this set; without it the
         // editor's own diagnostics go nowhere and a broken page looks identical
         // to a slow one.
