@@ -19,6 +19,14 @@ import com.debugly.markit.model.SupportedFileType
  */
 class DocumentStore(private val context: Context, private val treeUri: Uri) {
 
+    /**
+     * Memoised document existence. DocumentsProvider queries are Binder round
+     * trips; sync would otherwise make several per file and turn a two-file
+     * sync into a minute of waiting. Entries are invalidated by listings and by
+     * writes, so a cached "missing" cannot outlive a file that was just created.
+     */
+    private val knownDocuments = mutableMapOf<String, Boolean>()
+
     private val resolver: ContentResolver get() = context.contentResolver
 
     /** True when we still hold write permission on the tree. */
@@ -35,15 +43,45 @@ class DocumentStore(private val context: Context, private val treeUri: Uri) {
         val docId = if (clean.startsWith("$treeId/") || clean == treeId) clean
                     else "$treeId/$clean"
         val candidate = DocumentsContract.buildDocumentUriUsingTree(treeUri, docId)
-        // Query to confirm it exists; buildDocumentUri does not validate.
-        if (resolver.query(candidate, arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID),
-                           null, null, null)?.use { it.moveToFirst() } == true) candidate else null
+        if (documentExists(candidate)) candidate else null
     } catch (e: Exception) {
         null
     }
 
-    /** Lists one level below [dirPath]. */
-    fun list(dirPath: String = ""): List<FileNode> {
+    /**
+     * True when [uri] resolves to a real document.
+     *
+     * Every call here is a Binder round trip to the DocumentsProvider, and
+     * sync makes several per file (existence check, read, then the next
+     * directory listing). Doing them serially is what made a two-file sync take
+     * the better part of a minute, so the results are cached: a document that
+     * has been created by this process is known to exist, and entries are
+     * dropped whenever a listing refreshes the truth.
+     */
+    private fun documentExists(uri: Uri): Boolean {
+        val key = uri.toString()
+        knownDocuments[key]?.let { return it }
+
+        val present = resolver.query(
+            uri, arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID), null, null, null
+        )?.use { it.moveToFirst() } == true
+
+        knownDocuments[key] = present
+        return present
+    }
+
+    /** Forgets cached existence for everything under [dirPath]. */
+    private fun invalidateUnder(dirPath: String) {
+        val prefix = DocumentsContract.buildDocumentUriUsingTree(
+            treeUri,
+            if (dirPath.isBlank()) DocumentsContract.getTreeDocumentId(treeUri)
+            else "${DocumentsContract.getTreeDocumentId(treeUri)}/$dirPath"
+        ).toString()
+        val keep = knownDocuments.keys.filter { !it.startsWith(prefix) }.toSet()
+        knownDocuments.keys.retainAll(keep)
+    }
+
+fun list(dirPath: String = ""): List<FileNode> {
         val nodes = mutableListOf<FileNode>()
 
         val children = try {
@@ -53,6 +91,10 @@ class DocumentStore(private val context: Context, private val treeUri: Uri) {
         } catch (e: Exception) {
             null
         } ?: return emptyList()
+
+        // A listing is authoritative for its directory, so drop the cached
+        // verdicts for anything under it before repopulating.
+        invalidateUnder(dirPath)
 
         resolver.query(children, null, null, null, null)?.use { c ->
             while (c.moveToNext()) nodes.add(toNode(c, dirPath))
@@ -132,12 +174,14 @@ class DocumentStore(private val context: Context, private val treeUri: Uri) {
 
         val doc = DocumentsContract.createDocument(resolver, parent, mimeFor(name), name)
             ?: throw StorageException("无法创建文件: $path")
+        invalidateUnder(parentPath)
         resolver.openOutputStream(doc, "wt")?.use {
             it.write(content.toByteArray(Charsets.UTF_8))
         } ?: throw StorageException("无法写入: $path")
     }
 
     fun delete(path: String): Boolean {
+        invalidateUnder(path.substringBeforeLast('/', ""))
         val uri = uriFor(path) ?: return false
         return try {
             DocumentsContract.deleteDocument(resolver, uri)
