@@ -55,10 +55,18 @@ jobs:
         echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
         echo "$SDK/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
 
-        sdkmanager --version
-        yes | sdkmanager --licenses > /dev/null || true
-        sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
-        sdkmanager --list_installed | head -20 || true
+        # $GITHUB_PATH only takes effect in *later* steps, so the path has to be
+        # exported here as well or sdkmanager is simply not found.
+        SDKMANAGER="$SDK/cmdline-tools/latest/bin/sdkmanager"
+        if [[ ! -x "$SDKMANAGER" ]]; then
+          echo "::error::no sdkmanager at $SDKMANAGER -- this runner image has no command-line tools" >&2
+          exit 1
+        fi
+
+        "$SDKMANAGER" --version
+        yes | "$SDKMANAGER" --licenses > /dev/null || true
+        "$SDKMANAGER" "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+        "$SDKMANAGER" --list_installed | head -20 || true
 
     - name: Install xcodegen
       run: brew install xcodegen
