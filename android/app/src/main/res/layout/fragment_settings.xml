@@ -85,12 +85,12 @@
             <!-- Vault -->
             <TextView
                 style="@style/SettingsSection"
-                android:text="文件夹" />
+                android:text="存储" />
 
             <TextView
                 android:id="@+id/changeVault"
                 style="@style/SettingsAction"
-                android:text="更换 MarkIt 文件夹" />
+                android:text="更换 MarkIt 存储目录" />
 
             <TextView
                 android:id="@+id/vaultPath"
