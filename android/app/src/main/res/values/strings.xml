@@ -1,4 +1,6 @@
-<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">MarkIt</string>
+    <!-- Screen readers announce this on a note with local edits not yet on the
+         server; the cloud itself is too small to rely on. -->
+    <string name="pending_sync_description">有改动尚未同步</string>
 </resources>

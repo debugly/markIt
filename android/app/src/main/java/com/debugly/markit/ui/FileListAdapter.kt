@@ -18,7 +18,9 @@ sealed class Row {
         val node: FileNode,
         val badge: String?,
         /** True when this folder has WebDAV sync configured. */
-        val isSynced: Boolean = false
+        val isSynced: Boolean = false,
+        /** True when this file has local edits the server has not received. */
+        val isPendingSync: Boolean = false
     ) : Row()
 }
 
@@ -51,7 +53,7 @@ class FileListAdapter(
     override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
         when (val row = rows[position]) {
             is Row.Section -> (holder as SectionHolder).bind(row.title)
-            is Row.Entry -> (holder as EntryHolder).bind(row.node, row.badge, row.isSynced)
+            is Row.Entry -> (holder as EntryHolder).bind(row.node, row.badge, row.isSynced, row.isPendingSync)
         }
     }
 
@@ -73,8 +75,9 @@ class FileListAdapter(
         private val meta: TextView = view.findViewById(R.id.fileMeta)
         private val badge: TextView = view.findViewById(R.id.syncBadge)
         private val chevron: TextView = view.findViewById(R.id.chevron)
+        private val pending: android.widget.ImageView = view.findViewById(R.id.pendingSync)
 
-        fun bind(node: FileNode, badgeText: String?, isSynced: Boolean) {
+        fun bind(node: FileNode, badgeText: String?, isSynced: Boolean, isPending: Boolean) {
             icon.setImageResource(iconFor(node, isSynced))
             icon.setBackgroundResource(
                 if (node.isDirectory) R.drawable.bg_icon_folder
@@ -85,6 +88,8 @@ class FileListAdapter(
 
             badge.visibility = if (badgeText != null) View.VISIBLE else View.GONE
             badge.text = badgeText
+
+            pending.visibility = if (isPending) View.VISIBLE else View.GONE
 
             chevron.visibility = if (node.isDirectory) View.VISIBLE else View.GONE
 

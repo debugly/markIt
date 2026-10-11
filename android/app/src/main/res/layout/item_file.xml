@@ -59,6 +59,16 @@
         android:paddingBottom="2dp"
         android:visibility="gone" />
 
+    <!-- Shown when the note has local edits the server has not received. -->
+    <ImageView
+        android:id="@+id/pendingSync"
+        android:layout_width="17dp"
+        android:layout_height="17dp"
+        android:layout_marginStart="8dp"
+        android:src="@drawable/ic_sync_pending"
+        android:contentDescription="@string/pending_sync_description"
+        android:visibility="gone" />
+
     <TextView
         android:id="@+id/chevron"
         android:layout_width="wrap_content"

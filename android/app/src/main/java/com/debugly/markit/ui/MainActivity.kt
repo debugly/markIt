@@ -176,9 +176,21 @@ class MainActivity : AppCompatActivity() {
         }
         if (files.isNotEmpty()) {
             rows.add(Row.Section(if (filter.isBlank()) "文件" else "匹配 ${files.size} 项"))
-            files.forEach { rows.add(Row.Entry(it, null)) }
+            files.forEach { rows.add(Row.Entry(it, null, isPendingSync = isPendingSync(it))) }
         }
         adapter.submit(rows)
+    }
+
+    /**
+     * Whether [node] has edits the server has not received, for the cloud marker.
+     *
+     * Read from the manifest the last sync left locally, so it is a lookup
+     * rather than a network call -- which is what makes it safe to do per row on
+     * every rebuild. Notes outside a synced folder simply have no marker.
+     */
+    private fun isPendingSync(node: FileNode): Boolean {
+        val st = store ?: return false
+        return SyncRegistry.hasUnsyncedChanges(this, st, node)
     }
 
     private fun openNode(node: FileNode) {
