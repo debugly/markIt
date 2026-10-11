@@ -41,8 +41,7 @@ class SyncCoordinator(
 ) {
     companion object {
         private const val TAG = "MarkItSync"
-        private const val MANIFEST = ".markit-manifest.json"
-        private const val PENDING_DELETIONS = ".markit-pending-deletions.json"
+        private const val PREFS = "markit_sync_state"
         private const val DEBOUNCE_MS = 3_000L
     }
 
@@ -66,6 +65,7 @@ class SyncCoordinator(
     private var manifest: MutableMap<String, ManifestEntry> = mutableMapOf()
     private var pendingDeletions: MutableSet<String> = mutableSetOf()
     private var loaded = false
+    private val failedPush = mutableSetOf<String>()
 
     /**
      * Sync bookkeeping lives inside the scope so two folders cannot read each
@@ -74,16 +74,31 @@ class SyncCoordinator(
     private fun scoped(path: String): String =
         if (localScope.isEmpty()) path else "$localScope/$path"
 
-    private fun manifestFile() = store.uriFor(scoped(MANIFEST))
-    private fun deletionsFile() = store.uriFor(scoped(PENDING_DELETIONS))
+    private val statePrefs by lazy {
+        context.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
+    }
 
+    private fun manifestKey() = "manifest_$localScope"
+    private fun deletionsKey() = "deletions_$localScope"
+
+    /**
+     * Reads this scope's manifest and pending deletions.
+     *
+     * Both live in SharedPreferences rather than in the vault. They are
+     * per-device bookkeeping: the manifest records what *this* device last
+     * synced, so putting it in the vault would upload it to the server and make
+     * another device believe it had already synced the same files. Writing it
+     * through SAF also proved unreliable here -- rapid create-then-query against
+     * the DocumentsProvider raced with the concurrent reads, and the write came
+     * back FileNotFound for a document it had just created.
+     */
     private fun loadState() {
         if (loaded) return
         loaded = true
         try {
-            manifestFile()?.let {
-                val json = JSONObject(store.readText(scoped(MANIFEST)))
-                val obj = json.optJSONObject("entries") ?: JSONObject()
+            val raw = statePrefs.getString(manifestKey(), null)
+            if (raw != null) {
+                val obj = JSONObject(raw).optJSONObject("entries") ?: JSONObject()
                 for (key in obj.keys()) {
                     val e = obj.getJSONObject(key)
                     manifest[key] = ManifestEntry(
@@ -92,15 +107,16 @@ class SyncCoordinator(
                         lastModified = e.optLong("lastModified", 0)
                     )
                 }
-                Log.i(TAG, "loaded manifest with ${manifest.size} entries for scope '$localScope'")
+                Log.i(TAG, "loaded ${manifest.size} manifest entries for '$localScope'")
             }
-            deletionsFile()?.let {
-                val arr = org.json.JSONArray(store.readText(scoped(PENDING_DELETIONS)))
+            val dels = statePrefs.getString(deletionsKey(), null)
+            if (dels != null) {
+                val arr = org.json.JSONArray(dels)
                 for (i in 0 until arr.length()) pendingDeletions.add(arr.getString(i))
             }
         } catch (e: Exception) {
-            // A missing or corrupt manifest just means "sync everything", which
-            // is the same cold-start path a fresh install takes.
+            // A corrupt blob just means "sync everything", the same cold-start
+            // path a fresh install takes.
             Log.w(TAG, "could not read sync state, starting cold: ${e.message}")
             manifest.clear()
             pendingDeletions.clear()
@@ -116,16 +132,14 @@ class SyncCoordinator(
                     .put("contentLength", v.contentLength)
                     .put("lastModified", v.lastModified))
             }
-            store.writeText(scoped(MANIFEST), JSONObject().put("entries", obj).toString(2))
+            val dels = org.json.JSONArray()
+            pendingDeletions.forEach { dels.put(it) }
 
-            if (pendingDeletions.isNotEmpty()) {
-                val arr = org.json.JSONArray()
-                pendingDeletions.forEach { arr.put(it) }
-                store.writeText(scoped(PENDING_DELETIONS), arr.toString(2))
-            } else {
-                // Clear a stale list so an applied delete does not replay.
-                store.delete(scoped(PENDING_DELETIONS))
-            }
+            statePrefs.edit()
+                .putString(manifestKey(), JSONObject().put("entries", obj).toString())
+                .putString(deletionsKey(), dels.toString())
+                .apply()
+            Log.i(TAG, "saved ${manifest.size} entries for '$localScope'")
         } catch (e: Exception) {
             Log.w(TAG, "could not persist sync state: ${e.message}")
         }
@@ -146,7 +160,6 @@ class SyncCoordinator(
         loadState()
         // Only relative paths inside this scope are ours to delete remotely.
         if (!inScope(path)) return
-        if (isStateFile(path)) return
         if (pendingDeletions.add(path)) saveState()
     }
 
@@ -176,11 +189,6 @@ class SyncCoordinator(
         else -> null
     }
 
-    private fun isStateFile(path: String): Boolean {
-        val base = path.substringAfterLast('/')
-        return base == MANIFEST || base == PENDING_DELETIONS
-    }
-
     suspend fun sync(): Result = withContext(Dispatchers.IO) {
         lock.withLock {
             loadState()
@@ -193,10 +201,13 @@ class SyncCoordinator(
 
                 val pushed = pushLocalChanges()
                 val pulled = pullRemoteChanges()
+                if (failedPush.isNotEmpty()) {
+                    Log.w(TAG, "${failedPush.size} file(s) failed to upload and will retry next sync")
+                }
                 val removed = pushPendingDeletions()
 
                 manifest.clear()
-                manifest.putAll(snapshotLocal())
+                manifest.putAll(snapshotLocal().filterKeys { it !in failedPush })
 
                 // Deletions that reached the server drop off the list.
                 pendingDeletions.clear()
@@ -238,7 +249,6 @@ class SyncCoordinator(
         fun walk(path: String) {
             val nodes = try { store.list(path) } catch (e: Exception) { emptyList() }
             for (n in nodes) {
-                if (isStateFile(n.path)) continue
                 val rel = relativeToScope(n.path) ?: continue
                 snap[rel] = ManifestEntry(n.isDirectory, n.size, n.modifiedAt)
                 if (n.isDirectory) walk(n.path)
@@ -248,10 +258,39 @@ class SyncCoordinator(
         return snap
     }
 
-    /** Uploads locally changed/new files inside the scope. */
+    /**
+     * Uploads locally changed/new files inside the scope.
+     *
+     * Returns the count pushed. A file that fails to upload is remembered in
+     * [failedPush] so the manifest does not record it as synced -- otherwise a
+     * transient timeout would make the file look clean forever and it would
+     * never reach the server.
+     */
     private suspend fun pushLocalChanges(): Int {
         val current = snapshotLocal()
         var pushed = 0
+
+        // PUT into a collection that does not exist yet is a 409, and a cold
+        // sync has exactly that: the local folder is there, the remote one is
+        // not. Create the collections once, before any upload, rather than
+        // retrying per file.
+        try {
+            client.ensureDirectory(remoteRoot)
+        } catch (e: Exception) {
+            Log.w(TAG, "could not create remote root $remoteRoot: ${e.message}")
+        }
+
+        // Mirror the scope's subdirectories too, so a file whose parent is a
+        // nested folder has somewhere to land.
+        for ((rel, entry) in current) {
+            if (entry.isDirectory) {
+                try {
+                    client.ensureDirectory(remotePathFor(rel))
+                } catch (e: Exception) {
+                    Log.w(TAG, "could not create remote dir $rel: ${e.message}")
+                }
+            }
+        }
 
         for ((rel, entry) in current) {
             if (entry.isDirectory) continue
@@ -260,15 +299,53 @@ class SyncCoordinator(
                 old.lastModified == entry.lastModified) {
                 continue
             }
-            val localPath = if (localScope.isEmpty()) rel else "$localScope/$rel"
+            val localPath = localPathFor(rel)
             try {
                 client.upload(remotePathFor(rel), store.readBytes(localPath))
                 pushed++
             } catch (e: Exception) {
+                failedPush.add(rel)
                 Log.w(TAG, "push skipped $localPath: ${e.message}")
             }
         }
         return pushed
+    }
+
+
+    /**
+     * Strips the remoteRoot prefix from a path reported by the server, yielding
+     * the path relative to the sync root. Returns null for anything outside it,
+     * which should not happen but is cheaper to skip than to act on.
+     */
+    private fun stripRoot(path: String): String? {
+        val root = remoteRoot.trim('/')
+        if (root.isEmpty()) return path
+        return when {
+            path == root -> ""
+            path.startsWith("$root/") -> path.removePrefix("$root/")
+            else -> null
+        }
+    }
+
+
+    /**
+     * MKCOLs the remote root and every ancestor of [rel], ignoring collections
+     * that already exist.
+     *
+     * The root matters on a cold sync: remoteRoot is where every upload lands,
+     * and PUT into a collection that does not exist is a 409. Without this the
+     * first sync of a freshly configured folder uploads nothing at all.
+     */
+    private suspend fun ensureRemoteParents(rel: String) {
+        var walked = ""
+        for (segment in rel.split('/').dropLast(1)) {
+            walked = if (walked.isEmpty()) segment else "$walked/$segment"
+            try {
+                client.ensureDirectory(remotePathFor(walked))
+            } catch (e: Exception) {
+                Log.w(TAG, "could not create $walked: ${e.message}")
+            }
+        }
     }
 
     private fun remotePathFor(rel: String): String =
@@ -302,17 +379,19 @@ class SyncCoordinator(
         var pulled = 0
 
         for (n in remote) {
+            // list() reports paths that already include remoteRoot, so they have
+            // to be rebased before being run through the helpers. Feeding them
+            // straight in would request "drafts/drafts/x.md" and get a 409.
+            val rel = stripRoot(n.path) ?: continue
             if (n.isDirectory) {
-                val localDir = localPathFor(n.path)
-                try { client.ensureDirectory(remotePathFor(n.path)) } catch (e: Exception) { }
-                try { store.createDirectory(localDir) } catch (e: Exception) { }
+                try { client.ensureDirectory(remotePathFor(rel)) } catch (e: Exception) { }
+                try { store.createDirectory(localPathFor(rel)) } catch (e: Exception) { }
                 continue
             }
-            if (manifest.containsKey(n.path)) continue
-            val localPath = localPathFor(n.path)
+            if (manifest.containsKey(rel)) continue
             try {
-                val data = client.download(remotePathFor(n.path))
-                store.writeText(localPath, data.toString(Charsets.UTF_8))
+                val data = client.download(remotePathFor(rel))
+                store.writeText(localPathFor(rel), data.toString(Charsets.UTF_8))
                 pulled++
             } catch (e: Exception) {
                 Log.w(TAG, "pull skipped ${n.path}: ${e.message}")
