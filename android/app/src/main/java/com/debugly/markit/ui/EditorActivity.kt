@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.view.Menu
 import android.view.MenuItem
+import android.util.Log
 import android.webkit.WebView
 import android.widget.EditText
 import android.widget.ImageButton
@@ -13,6 +14,11 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import com.debugly.markit.R
 import com.debugly.markit.storage.DocumentStore
+import com.debugly.markit.sync.SyncCoordinator
+import com.debugly.markit.sync.WebDAVClient
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import java.util.concurrent.Executors
 
 /**
@@ -114,9 +120,7 @@ class EditorActivity : AppCompatActivity() {
             .setItems(options) { _, which ->
                 when (which) {
                     0 -> save()
-                    1 -> AlertDialog.Builder(this)
-                        .setMessage("重命名请在文件列表中长按操作。")
-                        .show()
+                    1 -> promptRename()
                     2 -> openExternally()
                     3 -> confirmDelete()
                 }
@@ -141,6 +145,90 @@ class EditorActivity : AppCompatActivity() {
                         .setMessage(e.message ?: "未知错误")
                         .show()
                 }
+            }
+        }
+    }
+
+    /**
+     * Renames the open file. The rename has to survive a sync, so the old path is
+     * recorded as a pending deletion: otherwise the next pull sees it missing
+     * locally, concludes it was deleted, and recreates the old name on the server
+     * alongside the new one.
+     */
+    private fun promptRename() {
+        val store = resolveStore() ?: return
+        val current = path.substringAfterLast('/')
+        val parent = path.substringBeforeLast('/', "")
+
+        val input = android.widget.EditText(this).apply {
+            setText(current)
+            setSelection(current.length)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("重命名")
+            .setView(input)
+            .setPositiveButton("确定") { _, _ ->
+                val newName = input.text.toString().trim()
+                if (newName.isEmpty() || newName == current) return@setPositiveButton
+
+                val newPath = if (parent.isEmpty()) newName else "$parent/$newName"
+
+                // Flush pending edits first so the renamed file is not carrying
+                // stale contents.
+                val text = editor.text.toString()
+                io.execute {
+                    try {
+                        store.writeText(path, text)
+                        if (!store.rename(path, newName)) {
+                            runOnUiThread { showRenameFailed("无法重命名 $newName") }
+                            return@execute
+                        }
+                        recordRenameForSync(path)
+                        runOnUiThread {
+                            path = newPath
+                            titleText.text = newName
+                            dirty = false
+                            statusBar.text = "已重命名为 $newName"
+                        }
+                    } catch (e: Exception) {
+                        runOnUiThread { showRenameFailed(e.message ?: "未知错误") }
+                    }
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun showRenameFailed(reason: String) {
+        AlertDialog.Builder(this)
+            .setTitle("重命名失败")
+            .setMessage(reason)
+            .setPositiveButton("好", null)
+            .show()
+    }
+
+    /** Tells the sync layer the old path is gone so the server copy is deleted. */
+    private fun recordRenameForSync(oldPath: String) {
+        val uri = getSharedPreferences("markit", MODE_PRIVATE).getString("tree_uri", null)
+            ?: return
+        val prefs = getSharedPreferences("markit_sync", MODE_PRIVATE)
+        val url = prefs.getString("url", null) ?: return
+        val remoteRoot = prefs.getString("path", "MarkIt") ?: "MarkIt"
+
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                SyncCoordinator(
+                    this@EditorActivity,
+                    DocumentStore(this@EditorActivity, android.net.Uri.parse(uri)),
+                    WebDAVClient(
+                        url,
+                        prefs.getString("user", "") ?: "",
+                        prefs.getString("pass", "") ?: ""
+                    ),
+                    remoteRoot
+                ).recordDeletion(oldPath)
+            } catch (e: Exception) {
+                Log.w("MarkItEditor", "could not record rename: ${e.message}")
             }
         }
     }
