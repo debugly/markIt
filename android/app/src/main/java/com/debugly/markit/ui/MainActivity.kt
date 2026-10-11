@@ -28,7 +28,7 @@ import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import java.util.concurrent.Executors
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : AppCompatActivity(), BrowseFragment.Host, SettingsFragment.Host {
 
     private lateinit var listView: RecyclerView
     private lateinit var adapter: FileListAdapter
@@ -37,6 +37,7 @@ class MainActivity : AppCompatActivity() {
     private var fab: FloatingActionButton? = null
 
     private var store: DocumentStore? = null
+    private lateinit var recentFiles: RecentFiles
     private var currentPath: String = ""
     private var allNodes: List<FileNode> = emptyList()
     private var filter: String = ""
@@ -51,6 +52,72 @@ class MainActivity : AppCompatActivity() {
         if (uri != null) attachTree(uri)
     }
 
+    // ---- BrowseFragment.Host -------------------------------------------------
+    // The SAF tree grant lives on the Activity, so a pushed level asks for the
+    // store rather than holding its own.
+
+    override fun storeFor(fragment: BrowseFragment): DocumentStore? = store
+
+    override fun onOpenFile(node: FileNode) {
+        val name = node.name
+        val type = SupportedFileType.detect(name)
+        if (type == SupportedFileType.IMAGE || type == SupportedFileType.HTML) {
+            val tree = getSharedPreferences("markit", MODE_PRIVATE)
+                .getString("tree_uri", null) ?: return
+            startActivity(FileViewerActivity.intent(this, tree, node.path, name))
+            return
+        }
+        val s = store ?: return
+        io.execute {
+            val content = try { s.readText(node.path) } catch (e: Exception) { "" }
+            runOnUiThread {
+                startActivity(EditorActivity.intent(this@MainActivity, node.path, name, content))
+            }
+        }
+    }
+
+    override fun onNodeLongPress(node: FileNode) = showNodeActions(node)
+
+    override fun onOpenSyncSettings(folderPath: String) = showSync(folderPath)
+
+    /**
+     * Brings the root listing back once a pushed level is gone.
+     *
+     * A pushed folder hides the root's own list and search field, since two
+     * lists sharing the screen would show two search boxes. Restoring them from
+     * the back stack rather than from each level's lifecycle matters because
+     * replace() shows the incoming fragment and hides the outgoing one, so a
+     * newly pushed level is also "becoming visible" and would hand the screen
+     * straight back.
+     */
+    // ---- SettingsFragment.Host ----------------------------------------------
+
+    override fun onCloseSettings() {
+        supportFragmentManager.popBackStack()
+        showChrome(true)
+        load()
+    }
+
+    override fun onVaultPicked(uri: android.net.Uri) = attachTree(uri)
+
+    override fun onRecentsCleared() {
+        // The recent list is a section of the root listing, so it has to be
+        // rebuilt or the entries stay on screen until the next reload.
+        load()
+    }
+
+    override fun onBrowseLevelClosed() {
+        supportFragmentManager.addOnBackStackChangedListener(
+            object : FragmentManager.OnBackStackChangedListener {
+                override fun onBackStackChanged() {
+                    if (supportFragmentManager.backStackEntryCount == 0) {
+                        setRootChromeVisible(true)
+                    }
+                }
+            }
+        )
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Insets.goEdgeToEdge(this)
@@ -62,6 +129,7 @@ class MainActivity : AppCompatActivity() {
 
         listView = findViewById(R.id.fileList)
         searchField = findViewById(R.id.searchField)
+        recentFiles = RecentFiles(this)
         emptyState = findViewById(R.id.emptyState)
         fab = findViewById(R.id.fabNew)
 
@@ -128,21 +196,30 @@ class MainActivity : AppCompatActivity() {
         showChrome(false)
     }
 
-    /** The file list owns the search bar, FAB and tab bar; other screens hide them. */
+    /**
+     * The file list owns the search bar, list, FAB and tab bar; other screens
+     * take the whole area.
+     *
+     * The list and its empty state are hidden too, not just the chrome. Leaving
+     * them behind shows the folder being set up underneath the screen that
+     * replaced it.
+     */
     private fun showChrome(visible: Boolean) {
         val v = if (visible) View.VISIBLE else View.GONE
         findViewById<View>(R.id.searchBar).visibility = v
-        findViewById<BottomNavigationView>(R.id.bottomBar).visibility = v
+        findViewById<View>(R.id.fileList).visibility = v
+        findViewById<View>(R.id.emptyState).visibility = v
+        findViewById<View>(R.id.bottomBar).visibility = v
         fab?.visibility = v
+        findViewById<View>(R.id.browseContainer).visibility = v
     }
 
-    private fun showSettings() {
-        showFiles()
-        AlertDialog.Builder(this)
-            .setTitle("设置")
-            .setMessage("预览样式、编辑器字体等选项将随设置页一并提供。")
-            .setPositiveButton("好", null)
-            .show()
+        private fun showSettings() {
+        supportFragmentManager.beginTransaction()
+            .replace(R.id.rootContainer, SettingsFragment.newInstance())
+            .addToBackStack("settings")
+            .commitAllowingStateLoss()
+        showChrome(false)
     }
 
     private fun load() {
@@ -166,15 +243,19 @@ class MainActivity : AppCompatActivity() {
 
         val rows = mutableListOf<Row>()
         val dirs = shown.filter { it.isDirectory }
-        val files = shown.filter { !it.isDirectory }
+        // The second section is what the user last worked on rather than an
+        // alphabetical listing of the folder. Browsing the full tree is still
+        // what entering a directory is for, so nothing is lost by dropping the
+        // flat file list from here.
+        val recents = recentEntries()
 
         if (dirs.isNotEmpty() && filter.isBlank()) {
             rows.add(Row.Section("目录"))
             dirs.forEach { rows.add(Row.Entry(it, null, syncConfigs.isSynced(it.path))) }
         }
-        if (files.isNotEmpty()) {
-            rows.add(Row.Section(if (filter.isBlank()) "文件" else "匹配 ${files.size} 项"))
-            files.forEach { rows.add(Row.Entry(it, null, isPendingSync = isPendingSync(it))) }
+        if (recents.isNotEmpty()) {
+            rows.add(Row.Section(if (filter.isBlank()) "最近打开" else "匹配 ${recents.size} 项"))
+            recents.forEach { rows.add(Row.Entry(it, null, isPendingSync = isPendingSync(it))) }
         }
         adapter.submit(rows)
 
@@ -182,7 +263,7 @@ class MainActivity : AppCompatActivity() {
         // again, so the empty state has to be updated here too. Without it a
         // filter matching nothing left a blank screen with no indication that
         // the app was alive and simply had no match.
-        updateEmptyState(dirs.isEmpty() && files.isEmpty())
+        updateEmptyState(dirs.isEmpty() && recents.isEmpty())
     }
 
     /**
@@ -202,6 +283,30 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
+     * The recent notes to list, as nodes.
+     *
+     * Paths that no longer resolve are dropped rather than listed: a note
+     * deleted or renamed through another app would otherwise sit in the list as
+     * a row that cannot be opened. Inside a folder the list is also narrowed to
+     * what that folder holds, so opening a subfolder does not show a recent
+     * section full of notes from elsewhere in the vault.
+     */
+    private fun recentEntries(): List<FileNode> {
+        val st = store ?: return emptyList()
+        val scope = currentPath
+        val recent = recentFiles.resolvable(st)
+        return recent
+            .filter { scope.isBlank() || it == scope || it.startsWith("$scope/") }
+            .map { path ->
+                // Metadata comes from the listing when the file is in view; the
+                // recents list otherwise has to resolve the node itself to show
+                // anything beyond the name.
+                allNodes.firstOrNull { it.path == path } ?: FileNode(path, false)
+            }
+            .filter { filter.isBlank() || it.name.contains(filter, ignoreCase = true) }
+    }
+
+    /**
      * Whether [node] has edits the server has not received, for the cloud marker.
      *
      * Read from the manifest the last sync left locally, so it is a lookup
@@ -213,15 +318,39 @@ class MainActivity : AppCompatActivity() {
         return SyncRegistry.hasUnsyncedChanges(this, st, node)
     }
 
+    private fun setRootChromeVisible(visible: Boolean) {
+        val on = if (visible) android.view.View.VISIBLE else android.view.View.GONE
+        findViewById<View>(R.id.searchBar).visibility = on
+        findViewById<View>(R.id.fileList).visibility = on
+        findViewById<View>(R.id.emptyState).visibility =
+            if (visible && allNodes.isEmpty()) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.fabNew).visibility = on
+        findViewById<View>(R.id.browseContainer).visibility =
+            if (visible) View.GONE else View.VISIBLE
+    }
+
     private fun openNode(node: FileNode) {
         if (node.isDirectory) {
-            currentPath = node.path
-            load()
+            // Root is the only level this activity owns; everything below is a
+            // pushed fragment.
+            // The root's list and search field step aside; the pushed level
+            // brings its own. Two lists in one screen would show two search
+            // boxes stacked on each other.
+            setRootChromeVisible(false)
+            supportFragmentManager.beginTransaction()
+                .replace(R.id.browseContainer, BrowseFragment.forPath(node.path))
+                .addToBackStack(node.path)
+                .commitAllowingStateLoss()
             return
         }
 
         val name = node.name
         val type = SupportedFileType.detect(name)
+
+        // Recorded before the type branches: the viewer is just as much of a
+        // place the user works as the editor, and both should show up in the
+        // recent list.
+        recentFiles.record(node.path)
 
         // Images and HTML have no useful source view, so they go straight to the
         // read-only viewer. Opening a .png as text showed a screen of binary
@@ -331,6 +460,10 @@ class MainActivity : AppCompatActivity() {
                 val s = store ?: return@setPositiveButton
                 io.execute {
                     s.delete(node.path)
+                    // Otherwise the row stays in the recent list until the next
+                    // resolve pass drops it, and a folder delete would leave one
+                    // stale entry per file inside it.
+                    dropFromRecent(node)
                     // A delete is inferred remotely from the file going missing,
                     // so record it explicitly. Otherwise the next pull would see
                     // it absent locally and push it straight back.
@@ -342,6 +475,32 @@ class MainActivity : AppCompatActivity() {
             }
             .setNegativeButton("取消", null)
             .show()
+    }
+
+    /**
+     * Removes [node] from the recent list after it is deleted.
+     *
+     * A folder drops itself and everything under it. Leaving the children behind
+     * would mean deleting a folder produces a recent section full of entries
+     * that resolve to nothing.
+     */
+    private fun dropFromRecent(node: FileNode) {
+        val scope = node.path
+        val st = store
+        recentFiles.paths().forEach { path ->
+            val hit = if (node.isDirectory) {
+                path == scope || path.startsWith("$scope/")
+            } else {
+                path == scope
+            }
+            if (hit) recentFiles.remove(path)
+        }
+        // A folder delete can leave the folder's own subfolder entries behind
+        // when the store no longer resolves them, so re-resolve what is left.
+        if (st != null) {
+            val keep = recentFiles.resolvable(st)
+            recentFiles.paths().filter { it !in keep }.forEach { recentFiles.remove(it) }
+        }
     }
 
     private fun coordinatorFor(config: FolderSyncConfig): SyncCoordinator? {

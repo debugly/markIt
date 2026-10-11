@@ -357,6 +357,7 @@ class WysiwygActivity : Activity() {
                 editorReady = true
                 statusBar.text = "所见即所得编辑"
                 web.evaluateJavascript("window.__markitInitial && window.__markitInitial();", null)
+                applyPreviewStyle()
             }
         }
 
@@ -394,6 +395,20 @@ class WysiwygActivity : Activity() {
             Log.e(TAG, "js error: $message")
             runOnUiThread { statusBar.text = "编辑器报错：$message" }
         }
+    }
+
+    /**
+     * Hands the chosen stylesheet to the page.
+     *
+     * The page's own updateStyle replaces the contents of a single style
+     * element, which is how the Mac client applies it too. Applied after the
+     * initial content so the first paint is already in the chosen style.
+     */
+    private fun applyPreviewStyle() {
+        val css = PreviewStyles.cssOrDefault(this)
+        if (css.isEmpty()) return
+        val js = "window.updateStyle && window.updateStyle(${PreviewStyles.jsonString(css)});"
+        web.evaluateJavascript(js, null)
     }
 
     override fun onPause() {

@@ -211,6 +211,43 @@ fun list(dirPath: String = ""): List<FileNode> {
         }
     }
 
+    /**
+     * The picked folder, for showing in settings.
+     *
+     * Decoded from the tree id rather than read back through a listing, so the
+     * settings screen says which folder is in use without doing SAF work on the
+     * main thread just to render a label.
+     */
+    fun describeRoot(): String = try {
+        DocumentsContract.getTreeDocumentId(treeUri).substringAfterLast(':').ifBlank { treeUri.toString() }
+    } catch (e: Exception) {
+        treeUri.toString()
+    }
+
+    /** True when [path] resolves to a document. Cached, so cheap to call. */
+    fun exists(path: String): Boolean = uriFor(path) != null
+
+    /**
+     * True when [path] is a folder rather than a file.
+     *
+     * False for anything unreachable, which is what callers want: a path that no
+     * longer resolves should not be treated as a file either.
+     */
+    fun isDirectory(path: String): Boolean {
+        val uri = uriFor(path) ?: return false
+        return try {
+            resolver.query(
+                uri, arrayOf(DocumentsContract.Document.COLUMN_MIME_TYPE), null, null, null
+            )?.use { c ->
+                if (!c.moveToFirst()) return false
+                c.getStringOrNull(DocumentsContract.Document.COLUMN_MIME_TYPE) ==
+                    DocumentsContract.Document.MIME_TYPE_DIR
+            } ?: false
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     /** For "open externally": a shareable uri plus the content type to declare. */
     fun shareInfo(path: String): Pair<Uri, String>? {
         val uri = uriFor(path) ?: return null
