@@ -11,10 +11,9 @@ import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.fragment.app.FragmentManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
 import com.debugly.markit.R
 import com.debugly.markit.model.FileNode
 import com.debugly.markit.storage.DocumentStore
@@ -46,7 +45,12 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Insets.goEdgeToEdge(this)
         setContentView(R.layout.activity_main)
+
+        // The list canvas stays flush to the screen; only the chrome is inset.
+        Insets.apply(findViewById(R.id.searchBar), top = true, horizontal = true)
+        Insets.apply(findViewById(R.id.bottomBar), bottom = true, horizontal = true)
 
         listView = findViewById(R.id.fileList)
         searchField = findViewById(R.id.searchField)
@@ -68,23 +72,16 @@ class MainActivity : AppCompatActivity() {
 
         findViewById<BottomNavigationView>(R.id.bottomBar).setOnItemSelectedListener { item ->
             when (item.itemId) {
-                R.id.nav_files -> true
-                R.id.nav_sync -> { showSync(); false }
-                R.id.nav_settings -> { showSettings(); false }
+                R.id.nav_files -> { showFiles(); true }
+                R.id.nav_sync -> { showSync(); true }
+                R.id.nav_settings -> { showSettings(); true }
                 else -> false
             }
         }
 
         fab?.setOnClickListener { showCreateSheet() }
+        Insets.apply(fab ?: findViewById(R.id.fabNew), horizontal = true)
 
-        // Edge-to-edge on Android 15+ would otherwise put the search field under
-        // the status bar.
-        val root = findViewById<View>(R.id.rootContainer)
-        ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
-            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            v.setPadding(bars.left, bars.top, bars.right, 0)
-            insets
-        }
 
         // Re-attach to the previously granted tree, otherwise ask for one.
         val saved = getSharedPreferences("markit", MODE_PRIVATE).getString("tree_uri", null)
@@ -109,13 +106,31 @@ class MainActivity : AppCompatActivity() {
         load()
     }
 
+    /** Returns to the vault. Public so the sync screen's back button can call it. */
+    fun showFiles() {
+        supportFragmentManager.popBackStack(null, FragmentManager.POP_BACK_STACK_INCLUSIVE)
+        showChrome(true)
+        load()
+    }
+
     private fun showSync() {
         supportFragmentManager.beginTransaction()
-            .replace(R.id.rootContainer, SyncFragment()).commitAllowingStateLoss()
-        findViewById<BottomNavigationView>(R.id.bottomBar).visibility = View.GONE
+            .replace(R.id.rootContainer, SyncFragment())
+            .addToBackStack("sync")
+            .commitAllowingStateLoss()
+        showChrome(false)
+    }
+
+    /** The file list owns the search bar, FAB and tab bar; other screens hide them. */
+    private fun showChrome(visible: Boolean) {
+        val v = if (visible) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.searchBar).visibility = v
+        findViewById<BottomNavigationView>(R.id.bottomBar).visibility = v
+        fab?.visibility = v
     }
 
     private fun showSettings() {
+        showFiles()
         AlertDialog.Builder(this)
             .setTitle("设置")
             .setMessage("预览样式、编辑器字体等选项将随设置页一并提供。")

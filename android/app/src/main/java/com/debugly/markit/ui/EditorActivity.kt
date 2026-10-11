@@ -7,9 +7,6 @@ import android.view.Menu
 import android.view.MenuItem
 import android.webkit.WebView
 import android.widget.EditText
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
-import android.view.View
 import android.widget.ImageButton
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
@@ -38,7 +35,13 @@ class EditorActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Insets.goEdgeToEdge(this)
         setContentView(R.layout.activity_editor)
+
+        // Toolbar and status line are inset; the editor canvas and the preview
+        // stay flush so text runs edge to edge in reading mode.
+        Insets.apply(findViewById(R.id.topBar), top = true, horizontal = true)
+        Insets.apply(findViewById(R.id.statusBar), bottom = true, horizontal = true)
 
         path = intent.getStringExtra(EXTRA_PATH).orEmpty()
         val content = intent.getStringExtra(EXTRA_CONTENT).orEmpty()
@@ -62,14 +65,7 @@ class EditorActivity : AppCompatActivity() {
 
         web.settings.javaScriptEnabled = false
 
-        // Android 15+ draws edge to edge, so the toolbar sits under the status
-        // bar and its buttons are untappable. Pad the top bar by the real inset.
-        val topBar = findViewById<View>(R.id.topBar)
-        ViewCompat.setOnApplyWindowInsetsListener(topBar) { v, insets ->
-            val top = insets.getInsets(WindowInsetsCompat.Type.systemBars()).top
-            v.setPadding(v.paddingLeft, top, v.paddingRight, v.paddingBottom)
-            insets
-        }
+
 
         findViewById<ImageButton>(R.id.btnBack).setOnClickListener { finish() }
         findViewById<ImageButton>(R.id.btnToggleMode).setOnClickListener { toggleMode() }
@@ -93,15 +89,22 @@ class EditorActivity : AppCompatActivity() {
             editor.visibility = android.view.View.GONE
             web.visibility = android.view.View.VISIBLE
             statusBar.text = "阅读模式 · 左右滑动调节字号"
+
+            // The toolbar stays visible in both modes, so the page only has to
+            // clear the navigation bar -- not the status bar, which the toolbar
+            // already handles.
+            Insets.apply(web, bottom = true, horizontal = true)
         } else {
             editor.visibility = android.view.View.VISIBLE
             web.visibility = android.view.View.GONE
             statusBar.text = "源码模式"
+
+            Insets.apply(web, bottom = true, horizontal = true)
         }
         findViewById<ImageButton>(R.id.btnToggleMode)
             .setImageResource(
-                if (showingPreview) android.R.drawable.ic_menu_edit
-                else android.R.drawable.ic_menu_view
+                if (showingPreview) R.drawable.ic_edit
+                else R.drawable.ic_preview
             )
     }
 

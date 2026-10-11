@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Remembers a view's layout padding so Insets.apply() stays idempotent. -->
+    <item name="insets_baseline" type="id" />
+</resources>

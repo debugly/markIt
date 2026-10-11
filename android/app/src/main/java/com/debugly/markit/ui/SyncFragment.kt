@@ -6,6 +6,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.EditText
+import android.widget.ImageButton
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
@@ -18,6 +19,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/**
+ * WebDAV settings. Has its own toolbar rather than borrowing the file list's
+ * chrome: the search field and FAB mean nothing here, and the title needs a
+ * back button to return to the vault.
+ */
 class SyncFragment : Fragment() {
 
     private lateinit var urlField: EditText
@@ -25,6 +31,7 @@ class SyncFragment : Fragment() {
     private lateinit var passField: EditText
     private lateinit var pathField: EditText
     private lateinit var statusText: TextView
+    private var backCallback: androidx.activity.OnBackPressedCallback? = null
 
     private val prefs by lazy {
         requireContext().getSharedPreferences("markit_sync", android.content.Context.MODE_PRIVATE)
@@ -49,10 +56,33 @@ class SyncFragment : Fragment() {
         statusText.text = if (last == 0L) "尚未同步"
                            else "上次同步 ${android.text.format.DateFormat.format("MM-dd HH:mm", last)}"
 
+        // Same edge-to-edge handling as the other screens.
+        Insets.apply(v.findViewById(R.id.syncTopBar), top = true, horizontal = true)
+        Insets.apply(v.findViewById(R.id.syncScroll), bottom = true, horizontal = true)
+
+        v.findViewById<ImageButton>(R.id.syncBack).setOnClickListener {
+            (activity as? MainActivity)?.showFiles()
+        }
         v.findViewById<TextView>(R.id.btnTest).setOnClickListener { testConnection() }
         v.findViewById<TextView>(R.id.btnSyncNow).setOnClickListener { runSync() }
 
         return v
+    }
+
+    override fun onStart() {
+        super.onStart()
+        backCallback = object : androidx.activity.OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                (activity as? MainActivity)?.showFiles()
+            }
+        }
+        requireActivity().onBackPressedDispatcher.addCallback(backCallback!!)
+    }
+
+    override fun onStop() {
+        super.onStop()
+        backCallback?.remove()
+        backCallback = null
     }
 
     private fun savePrefs() {
@@ -84,22 +114,21 @@ class SyncFragment : Fragment() {
         savePrefs()
         statusText.text = "正在测试连接…"
         scope.launch {
-            val result = withContext(Dispatchers.IO) {
+            val message = withContext(Dispatchers.IO) {
                 try {
-                    buildClient().testConnection(pathField.text.toString().trim())
+                    if (buildClient().testConnection(pathField.text.toString().trim())) "连接成功"
+                    else "连接失败"
                 } catch (e: Exception) {
                     e.message ?: "连接失败"
                 }
             }
-            if (result is Boolean) {
-                statusText.text = if (result) "连接成功" else "连接失败"
-            } else {
+            statusText.text = message
+            if (message != "连接成功") {
                 AlertDialog.Builder(requireContext())
                     .setTitle("连接失败")
-                    .setMessage(result as String)
+                    .setMessage(message)
                     .setPositiveButton("好", null)
                     .show()
-                statusText.text = "连接失败"
             }
         }
     }
