@@ -19,6 +19,16 @@ android {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+
+            // Without this, assembleRelease produces app-release-unsigned.apk,
+            // which Android refuses to install ("no certificates"). That is a
+            // release that ships and cannot be used, so the release build is
+            // signed with the debug key unless a real keystore is configured.
+            //
+            // The debug key is not a secret and does not provide identity, but
+            // it makes the artifact installable, which is what a side-loaded
+            // app needs. Set MARKIT_KEYSTORE to publish a properly signed one.
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 
