@@ -27,7 +27,7 @@ on:
 jobs:
   build:
     name: build-and-publish
-    runs-on: macos-15
+    runs-on: macos-15  # Android and macOS both build here
     env:
       GH_TOKEN: ${{ github.token }}
 
