@@ -1,0 +1,29 @@
+<resources>
+    <!-- Primer dark. Same names as values/colors.xml, so nothing above this
+         layer needs to know which one is in effect. -->
+    <color name="bg_canvas">#0D1117</color>
+    <color name="bg_inset">#161B22</color>
+    <color name="bg_subtle">#161B22</color>
+    <color name="bg_hover">#21262D</color>
+    <color name="border">#30363D</color>
+    <color name="border_muted">#21262D</color>
+    <color name="fg_default">#E6EDF3</color>
+    <color name="fg_muted">#8B949E</color>
+    <color name="fg_on_accent">#FFFFFF</color>
+    <color name="accent">#4493F8</color>
+    <color name="accent_hover">#58A6FF</color>
+    <color name="success">#3FB950</color>
+    <color name="danger">#F85149</color>
+    <color name="warning">#D29922</color>
+    <color name="pending_cloud">#8B949E</color>
+    <color name="accent_soft">#121D2F</color>
+
+    <color name="type_markdown">#A371F7</color>
+    <color name="type_text">#8B949E</color>
+    <color name="type_image">#3FB950</color>
+    <color name="type_html">#FF7B72</color>
+    <color name="type_other">#8B949E</color>
+
+    <color name="canvas_editor">#0D1117</color>
+    <color name="fg_on_editor">#E6EDF3</color>
+</resources>

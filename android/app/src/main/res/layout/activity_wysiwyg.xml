@@ -4,7 +4,7 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#1E1E22">
+    android:background="@color/bg_canvas">
 
     <LinearLayout
         android:id="@+id/topBar"
@@ -13,7 +13,7 @@
         android:minHeight="52dp"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:background="#FFFFFF"
+        android:background="@color/bg_canvas"
         android:paddingStart="6dp"
         android:paddingEnd="6dp"
         app:layout_constraintTop_toTopOf="parent"
@@ -35,7 +35,7 @@
             android:layout_weight="1"
             android:textSize="17sp"
             android:textStyle="bold"
-            android:textColor="#111111"
+            android:textColor="@color/fg_default"
             android:maxLines="1"
             android:ellipsize="middle"
             android:paddingStart="4dp"
@@ -108,9 +108,9 @@
         android:gravity="center_vertical"
         android:paddingStart="14dp"
         android:paddingEnd="14dp"
-        android:background="#F2F2F5"
+        android:background="@color/bg_inset"
         android:textSize="12sp"
-        android:textColor="#6C6C70"
+        android:textColor="@color/fg_muted"
         android:text="正在加载编辑器…"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"

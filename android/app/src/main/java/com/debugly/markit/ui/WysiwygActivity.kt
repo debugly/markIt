@@ -97,18 +97,17 @@ class WysiwygActivity : Activity() {
         // fine but every local image comes out broken.
         settings.allowFileAccess = true
         settings.allowContentAccess = true
-        // Opaque, matching the palette the template forces. Transparent lets the
-        // Activity's dark window show through, which is what made a correctly
-        // rendered note look like dark text on a dark background.
-        web.setBackgroundColor(Color.parseColor("#0F172A"))
-        // The toolbar is light but the page behind the status bar is dark, so
-        // the system icons have to flip to light or they vanish. This has to
-        // hang off the decor view: setOnApplyWindowInsetsListener replaces any
-        // listener already on a view, so pointing it at the toolbar would
-        // silently swap out the one applying the toolbar's status-bar padding --
-        // the toolbar would slide back under the clock and the toolbar would be
-        // left un-padded with no error anywhere.
-        Insets.useLightIconsOn(this, window.decorView, light = true)
+        // The page paints its own surface, so the WebView behind it has to match
+        // or the two disagree in the moment before the first paint. Resolved from
+        // the same theme the rest of the UI uses.
+        web.setBackgroundColor(
+            androidx.core.content.ContextCompat.getColor(this, R.color.bg_canvas)
+        )
+        // Note: do not call useLightIconsOn here. setOnApplyWindowInsetsListener
+        // replaces whatever listener a view already has, so pointing it at the
+        // toolbar would silently swap out the one applying the toolbar's
+        // status-bar padding, putting the toolbar back under the clock with
+        // nothing logged. goEdgeToEdge sets the icon appearance already.
         // console.log from the page is only visible with this set; without it the
         // editor's own diagnostics go nowhere and a broken page looks identical
         // to a slow one.
@@ -187,6 +186,9 @@ class WysiwygActivity : Activity() {
         val html = template.replace(
             "<!--TIPTAP_BUNDLE-->",
             """<script src="tiptap-bundle.js"></script>"""
+        ).replace(
+            "<html lang=\"zh-CN\">",
+            "<html lang=\"zh-CN\" data-theme=\"${if (isNightMode()) "dark" else "light"}\">"
         )
 
         // Split the note: Jekyll front matter goes in the header card, the rest
@@ -399,6 +401,19 @@ class WysiwygActivity : Activity() {
         // Same reason as the source editor: leaving the note flushes the sync
         // instead of waiting out the idle timer.
         resolveStore()?.let { SyncRegistry.flushNow(this, it, path) }
+    }
+
+    /**
+     * Whether the app is currently in night mode.
+     *
+     * Resolved rather than asked of the page, because Android's WebView does not
+     * reliably report prefers-color-scheme. Handing the value over as an
+     * attribute keeps the editor and the surrounding UI from disagreeing.
+     */
+    private fun isNightMode(): Boolean {
+        val mode = resources.configuration.uiMode and
+            android.content.res.Configuration.UI_MODE_NIGHT_MASK
+        return mode == android.content.res.Configuration.UI_MODE_NIGHT_YES
     }
 
     override fun onDestroy() {

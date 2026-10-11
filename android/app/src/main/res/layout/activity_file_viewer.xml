@@ -6,7 +6,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="#F2F2F7">
+    android:background="@color/bg_inset">
 
     <LinearLayout
         android:id="@+id/viewerTopBar"
@@ -15,7 +15,7 @@
         android:minHeight="52dp"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:background="#FFFFFF"
+        android:background="@color/bg_canvas"
         android:paddingStart="6dp"
         android:paddingEnd="12dp">
 
@@ -35,7 +35,7 @@
             android:layout_marginStart="4dp"
             android:textSize="17sp"
             android:textStyle="bold"
-            android:textColor="#111111"
+            android:textColor="@color/fg_default"
             android:maxLines="1"
             android:ellipsize="middle" />
     </LinearLayout>
@@ -45,14 +45,14 @@
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:background="#FFFFFF" />
+        android:background="@color/bg_canvas" />
 
     <TextView
         android:id="@+id/viewerStatus"
         android:layout_width="match_parent"
         android:layout_height="28dp"
         android:gravity="center"
-        android:background="#FFFFFF"
+        android:background="@color/bg_canvas"
         android:textSize="12sp"
-        android:textColor="#8A8A8E" />
+        android:textColor="@color/fg_muted" />
 </LinearLayout>

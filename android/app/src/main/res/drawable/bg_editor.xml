@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- The editing surface is dark in both modes on purpose: it is a code and
+     markdown canvas, and the light chrome around it is what marks it as an
+     editor rather than a page. Making it follow the system theme would leave a
+     dark block floating in a light app, which reads as a rendering fault. -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
-    <solid android:color="#1E1E22" />
+    <solid android:color="@color/canvas_editor" />
 </shape>

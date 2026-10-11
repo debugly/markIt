@@ -20,43 +20,42 @@
                 --label-color: #64748b;
             }
             /*
-             * Forced to the dark palette regardless of what the WebView reports.
-             * prefers-color-scheme is unreliable here -- the Android WebView does
-             * not consistently surface the app's night setting -- and the failure
-             * is silent and severe: dark text on the Activity's dark background,
-             * leaving a correctly rendered note that is nearly unreadable. A host
-             * that does report light mode can override it by setting the
-             * data-theme attribute below.
+             * Palette follows the host rather than the media query.
+             *
+             * prefers-color-scheme is not usable here: Android's WebView does
+             * not consistently report the app's night setting, and the failure is
+             * silent -- the page renders correctly in the wrong palette, which
+             * looks like a rendering fault rather than a theme bug. The app
+             * instead sets data-theme on the root before the document parses,
+             * so this is the same value the rest of the UI resolved.
              */
-            html[data-theme="dark"],
             :root {
-                --text-color: #e2e8f0;
-                --heading-color: #f1f5f9;
-                --border-color: #334155;
-                --table-th-bg: #1e293b;
-                --card-bg: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
-                --input-bg: #1e293b;
-                --input-border: #475569;
-                --input-text: #f1f5f9;
-                --badge-bg: #4c0519;
-                --badge-text: #fda4af;
-                --label-color: #94a3b8;
-                color-scheme: dark;
+                --text-color: #1f2328;
+                --heading-color: #1f2328;
+                --border-color: #d0d7de;
+                --table-th-bg: #f6f8fa;
+                --card-bg: linear-gradient(135deg, #f6f8fa 0%, #ffffff 100%);
+                --input-bg: #ffffff;
+                --input-border: #d0d7de;
+                --input-text: #1f2328;
+                --badge-bg: #ddf4ff;
+                --badge-text: #0969da;
+                --label-color: #59636e;
+                color-scheme: light;
             }
-            @media (prefers-color-scheme: light) {
-                :root {
-                    --text-color: #e2e8f0;
-                    --heading-color: #f1f5f9;
-                    --border-color: #334155;
-                    --table-th-bg: #1e293b;
-                    --card-bg: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
-                    --input-bg: #1e293b;
-                    --input-border: #475569;
-                    --input-text: #f1f5f9;
-                    --badge-bg: #4c0519;
-                    --badge-text: #fda4af;
-                    --label-color: #94a3b8;
-                }
+            html[data-theme="dark"] {
+                --text-color: #e6edf3;
+                --heading-color: #e6edf3;
+                --border-color: #30363d;
+                --table-th-bg: #161b22;
+                --card-bg: linear-gradient(135deg, #161b22 0%, #0d1117 100%);
+                --input-bg: #0d1117;
+                --input-border: #30363d;
+                --input-text: #e6edf3;
+                --badge-bg: #121d2f;
+                --badge-text: #4493f8;
+                --label-color: #8b949e;
+                color-scheme: dark;
             }
             html, body {
                 margin: 0 !important;

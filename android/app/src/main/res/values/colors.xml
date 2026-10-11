@@ -1,0 +1,38 @@
+<resources>
+    <!--
+      GitHub Primer. One name per role rather than one name per colour, so a
+      palette change lands everywhere it applies and dark mode only has to
+      restate the same names.
+
+      The iOS greys this replaces were picked to sit on a light background; they
+      had no dark counterpart at all, which is why every surface had to be
+      handled by hand and why the WYSIWYG editor ended up hard-coded dark.
+    -->
+    <color name="bg_canvas">#FFFFFF</color>
+    <color name="bg_inset">#F6F8FA</color>
+    <color name="bg_subtle">#F6F8FA</color>
+    <color name="bg_hover">#EFF2F5</color>
+    <color name="border">#D0D7DE</color>
+    <color name="border_muted">#D8DEE4</color>
+    <color name="fg_default">#1F2328</color>
+    <color name="fg_muted">#59636E</color>
+    <color name="fg_on_accent">#FFFFFF</color>
+    <color name="accent">#0969DA</color>
+    <color name="accent_hover">#0550AE</color>
+    <color name="success">#1A7F37</color>
+    <color name="danger">#CF222E</color>
+    <color name="warning">#9A6700</color>
+    <color name="pending_cloud">#59636E</color>
+    <color name="accent_soft">#DDF4FF</color>
+
+    <!-- File-type icons, from the Primer colour set. -->
+    <color name="type_markdown">#7E57C2</color>
+    <color name="type_text">#57606A</color>
+    <color name="type_image">#1A7F37</color>
+    <color name="type_html">#BC4C00</color>
+    <color name="type_other">#6E7781</color>
+
+    <!-- Editor canvas. Fixed across both modes; see bg_editor.xml. -->
+    <color name="canvas_editor">#0D1117</color>
+    <color name="fg_on_editor">#E6EDF3</color>
+</resources>

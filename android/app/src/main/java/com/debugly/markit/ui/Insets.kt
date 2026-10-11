@@ -35,10 +35,14 @@ object Insets {
             activity.window.isNavigationBarContrastEnforced = false
         }
 
-        // Light bars need dark icons; the app draws light chrome in both screens
-        // except the editor canvas, which is handled per-view below.
+        // Follow the theme rather than assuming light: the system icons have to
+        // stay legible over whatever the screen under them ends up being, and
+        // hardcoding this left the clock invisible in dark mode.
+        val night = (activity.resources.configuration.uiMode and
+            android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+            android.content.res.Configuration.UI_MODE_NIGHT_YES
         WindowInsetsControllerCompat(activity.window, activity.window.decorView)
-            .isAppearanceLightStatusBars = true
+            .isAppearanceLightStatusBars = !night
     }
 
     /**

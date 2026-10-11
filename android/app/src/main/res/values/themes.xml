@@ -1,6 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- DayNight already follows the system setting; the colours below come from
+         values/colors.xml and values-night/colors.xml, so light and dark are the
+         same theme with different values rather than two themes to keep in sync. -->
     <style name="Theme.Markit" parent="Theme.Material3.DayNight.NoActionBar">
-        <item name="colorPrimary">#0A84FF</item>
+        <item name="colorPrimary">@color/accent</item>
+        <item name="android:windowBackground">@color/bg_canvas</item>
+        <!-- Everything draws its own chrome, so no action bar or title shadow. -->
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
 </resources>

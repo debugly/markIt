@@ -3,7 +3,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="#F2F2F7">
+    android:background="@color/bg_inset">
 
     <!-- Own toolbar: the file list's search bar and FAB are hidden on this
          screen, and the title needs a way back to the vault. -->
@@ -14,7 +14,7 @@
         android:minHeight="52dp"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:background="#FFFFFF"
+        android:background="@color/bg_canvas"
         android:paddingStart="6dp"
         android:paddingEnd="12dp">
 
@@ -35,7 +35,7 @@
             android:text="同步"
             android:textSize="17sp"
             android:textStyle="bold"
-            android:textColor="#111111" />
+            android:textColor="@color/fg_default" />
     </LinearLayout>
 
     <ScrollView
@@ -59,7 +59,7 @@
             android:padding="16dp">
 
             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                android:text="WebDAV 服务器" android:textSize="12sp" android:textColor="#8A8A8E" />
+                android:text="WebDAV 服务器" android:textSize="12sp" android:textColor="@color/fg_muted" />
 
             <EditText android:id="@+id/davUrl" android:layout_width="match_parent"
                 android:layout_height="46dp" android:layout_marginTop="9dp"
@@ -69,7 +69,7 @@
                 android:importantForAutofill="no" />
 
             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                android:text="用户名" android:textSize="12sp" android:textColor="#8A8A8E"
+                android:text="用户名" android:textSize="12sp" android:textColor="@color/fg_muted"
                 android:layout_marginTop="12dp" />
 
             <EditText android:id="@+id/davUser" android:layout_width="match_parent"
@@ -79,7 +79,7 @@
                 android:inputType="text" android:importantForAutofill="no" />
 
             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                android:text="密码" android:textSize="12sp" android:textColor="#8A8A8E"
+                android:text="密码" android:textSize="12sp" android:textColor="@color/fg_muted"
                 android:layout_marginTop="12dp" />
 
             <EditText android:id="@+id/davPass" android:layout_width="match_parent"
@@ -89,7 +89,7 @@
                 android:inputType="textPassword" android:importantForAutofill="no" />
 
             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                android:text="远程路径" android:textSize="12sp" android:textColor="#8A8A8E"
+                android:text="远程路径" android:textSize="12sp" android:textColor="@color/fg_muted"
                 android:layout_marginTop="12dp" />
 
             <EditText android:id="@+id/davPath" android:layout_width="match_parent"
@@ -103,12 +103,12 @@
                 android:layout_height="46dp" android:layout_marginTop="18dp"
                 android:background="@drawable/bg_search" android:gravity="center"
                 android:text="测试连接" android:textSize="15sp" android:textStyle="bold"
-                android:textColor="#0A84FF" />
+                android:textColor="@color/accent" />
         </LinearLayout>
 
         <TextView android:id="@+id/syncStatus" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:layout_marginTop="14dp"
-            android:layout_marginBottom="12dp" android:textSize="12sp" android:textColor="#8A8A8E"
+            android:layout_marginBottom="12dp" android:textSize="12sp" android:textColor="@color/fg_muted"
             android:text="此文件夹未设置同步" />
 
         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -120,7 +120,7 @@
                     android:text="保存后自动同步" android:textSize="15sp" android:textColor="#1C1C1E" />
                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
                     android:text="停止编辑 30 秒后自动上传，关闭编辑器时立即同步"
-                    android:textSize="12sp" android:textColor="#8A8A8E" />
+                    android:textSize="12sp" android:textColor="@color/fg_muted" />
             </LinearLayout>
             <androidx.appcompat.widget.SwitchCompat android:id="@+id/swAutoSync"
                 android:layout_width="wrap_content" android:layout_height="wrap_content" />
@@ -129,13 +129,13 @@
         <TextView android:id="@+id/btnSyncNow" android:layout_width="match_parent"
             android:layout_height="48dp" android:background="@drawable/bg_search"
             android:gravity="center" android:text="立即同步"
-            android:textSize="15sp" android:textStyle="bold" android:textColor="#34C759" />
+            android:textSize="15sp" android:textStyle="bold" android:textColor="@color/success" />
 
         <TextView android:id="@+id/btnRemoveSync" android:layout_width="match_parent"
             android:layout_height="46dp" android:layout_marginTop="10dp"
             android:background="@drawable/bg_search" android:gravity="center"
             android:text="停止同步此文件夹" android:textSize="14sp"
-            android:textColor="#FF3B30" android:visibility="gone" />
+            android:textColor="@color/danger" android:visibility="gone" />
 
     </LinearLayout>
     </ScrollView>
