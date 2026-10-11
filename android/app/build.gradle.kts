@@ -11,8 +11,8 @@ android {
         applicationId = "com.debugly.markit"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.4.0"
+        versionCode = 2
+        versionName = "0.4.1"
     }
 
     buildTypes {
