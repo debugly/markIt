@@ -55,96 +55,65 @@
 
             <!-- Appearance -->
             <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:background="@color/bg_subtle"
-                android:paddingStart="16dp"
-                android:paddingEnd="16dp"
-                android:paddingTop="10dp"
-                android:paddingBottom="6dp"
-                android:text="外观"
-                android:textSize="12sp"
-                android:textColor="@color/fg_muted" />
+                style="@style/SettingsSection"
+                android:text="外观" />
 
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:paddingStart="16dp"
-                android:paddingEnd="16dp"
-                android:paddingTop="12dp"
-                android:paddingBottom="6dp"
-                android:text="预览渲染样式"
-                android:textSize="15sp"
-                android:textColor="@color/fg_default" />
+            <include
+                android:id="@+id/themeRow"
+                layout="@layout/item_setting_spinner" />
 
-            <RadioGroup
-                android:id="@+id/styleGroup"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:paddingBottom="8dp" />
+            <include
+                android:id="@+id/styleRow"
+                layout="@layout/item_setting_spinner" />
 
             <!-- Sync -->
             <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:background="@color/bg_subtle"
-                android:paddingStart="16dp"
-                android:paddingEnd="16dp"
-                android:paddingTop="10dp"
-                android:paddingBottom="6dp"
-                android:text="同步"
-                android:textSize="12sp"
-                android:textColor="@color/fg_muted" />
+                style="@style/SettingsSection"
+                android:text="同步" />
 
             <TextView
                 android:id="@+id/clearRecent"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:background="?android:attr/selectableItemBackground"
-                android:paddingStart="16dp"
-                android:paddingEnd="16dp"
-                android:paddingTop="14dp"
-                android:paddingBottom="14dp"
-                android:text="清除最近打开"
-                android:textSize="15sp"
-                android:textColor="@color/danger" />
+                style="@style/SettingsAction"
+                android:text="清除最近打开" />
+
+            <TextView
+                style="@style/SettingsHint"
+                android:paddingTop="0dp"
+                android:paddingBottom="12dp"
+                android:text="文件 Tab 的「最近打开」分区将清空" />
 
             <!-- Vault -->
             <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:background="@color/bg_subtle"
-                android:paddingStart="16dp"
-                android:paddingEnd="16dp"
-                android:paddingTop="10dp"
-                android:paddingBottom="6dp"
-                android:text="文件夹"
-                android:textSize="12sp"
-                android:textColor="@color/fg_muted" />
+                style="@style/SettingsSection"
+                android:text="文件夹" />
 
             <TextView
                 android:id="@+id/changeVault"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:background="?android:attr/selectableItemBackground"
-                android:paddingStart="16dp"
-                android:paddingEnd="16dp"
-                android:paddingTop="14dp"
-                android:paddingBottom="14dp"
-                android:text="更换 MarkIt 文件夹"
-                android:textSize="15sp"
-                android:textColor="@color/fg_default" />
+                style="@style/SettingsAction"
+                android:text="更换 MarkIt 文件夹" />
 
             <TextView
                 android:id="@+id/vaultPath"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:paddingStart="16dp"
-                android:paddingEnd="16dp"
-                android:paddingBottom="8dp"
-                android:textSize="12sp"
-                android:textColor="@color/fg_muted" />
+                style="@style/SettingsHint"
+                android:paddingBottom="12dp" />
+
+            <!-- About -->
+            <TextView
+                style="@style/SettingsSection"
+                android:text="关于" />
+
+            <!-- Shows the version, and reports up to date when tapped. Talking
+                 to a release feed is separate work; the row is in place so the
+                 answer lands where the user asked for it. -->
+            <TextView
+                android:id="@+id/checkUpdate"
+                style="@style/SettingsAction"
+                android:text="检查更新" />
+
+            <TextView
+                android:id="@+id/versionText"
+                style="@style/SettingsHint"
+                android:paddingBottom="8dp" />
 
         </LinearLayout>
     </ScrollView>

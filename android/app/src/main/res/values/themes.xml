@@ -10,4 +10,43 @@
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
+
+    <!--
+      Settings row shapes. Factored out because every row on the settings
+      screen wants the same padding and type, and repeating them inline is how
+      one row ends up a pixel off from the one above it.
+    -->
+    <style name="SettingsSection">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:background">@color/bg_subtle</item>
+        <item name="android:paddingStart">16dp</item>
+        <item name="android:paddingEnd">16dp</item>
+        <item name="android:paddingTop">10dp</item>
+        <item name="android:paddingBottom">6dp</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:textColor">@color/fg_muted</item>
+    </style>
+
+    <style name="SettingsAction">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:background">?android:attr/selectableItemBackground</item>
+        <item name="android:paddingStart">16dp</item>
+        <item name="android:paddingEnd">16dp</item>
+        <item name="android:paddingTop">14dp</item>
+        <item name="android:paddingBottom">14dp</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:textColor">@color/fg_default</item>
+    </style>
+
+    <style name="SettingsHint">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:paddingStart">16dp</item>
+        <item name="android:paddingEnd">16dp</item>
+        <item name="android:paddingTop">2dp</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:textColor">@color/fg_muted</item>
+    </style>
 </resources>

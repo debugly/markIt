@@ -119,6 +119,10 @@ class MainActivity : AppCompatActivity(), BrowseFragment.Host, SettingsFragment.
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Before super, because the theme decides which colour resources the
+        // whole Activity inflates with. Applying it later leaves the first frame
+        // in the system theme and then recreates the Activity.
+        ThemeSetting.applyStored(this)
         super.onCreate(savedInstanceState)
         Insets.goEdgeToEdge(this)
         setContentView(R.layout.activity_main)

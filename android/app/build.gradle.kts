@@ -31,6 +31,9 @@ android {
     }
     buildFeatures {
         viewBinding = true
+        // The settings screen shows the running version, which is build data
+        // rather than something to copy into a resource by hand and forget.
+        buildConfig = true
     }
 }
 
