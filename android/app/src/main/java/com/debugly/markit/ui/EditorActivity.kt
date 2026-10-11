@@ -14,6 +14,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import com.debugly.markit.R
 import com.debugly.markit.storage.DocumentStore
+import com.debugly.markit.sync.SyncConfigStore
 import com.debugly.markit.sync.SyncCoordinator
 import com.debugly.markit.sync.WebDAVClient
 import kotlinx.coroutines.CoroutineScope
@@ -207,25 +208,29 @@ class EditorActivity : AppCompatActivity() {
             .show()
     }
 
-    /** Tells the sync layer the old path is gone so the server copy is deleted. */
+    /**
+     * Tells the sync layer the old path is gone so the server copy is deleted.
+     *
+     * Sync is configured per folder now, so this looks up the config that covers
+     * the renamed file and records the deletion against that folder's scope. With
+     * no matching config there is nothing to tell, and the rename stays local --
+     * which is correct, because nothing was ever going to sync that file.
+     */
     private fun recordRenameForSync(oldPath: String) {
-        val uri = getSharedPreferences("markit", MODE_PRIVATE).getString("tree_uri", null)
-            ?: return
-        val prefs = getSharedPreferences("markit_sync", MODE_PRIVATE)
-        val url = prefs.getString("url", null) ?: return
-        val remoteRoot = prefs.getString("path", "MarkIt") ?: "MarkIt"
+        val treeUri = getSharedPreferences("markit", MODE_PRIVATE)
+            .getString("tree_uri", null) ?: return
+        val folder = oldPath.substringBeforeLast('/', "")
+        val config = SyncConfigStore(this).forFolder(folder) ?: return
+        if (!config.isConfigured) return
 
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 SyncCoordinator(
                     this@EditorActivity,
-                    DocumentStore(this@EditorActivity, android.net.Uri.parse(uri)),
-                    WebDAVClient(
-                        url,
-                        prefs.getString("user", "") ?: "",
-                        prefs.getString("pass", "") ?: ""
-                    ),
-                    remoteRoot
+                    DocumentStore(this@EditorActivity, android.net.Uri.parse(treeUri)),
+                    WebDAVClient(config.serverUrl, config.username, config.password),
+                    config.remotePath,
+                    config.folderPath
                 ).recordDeletion(oldPath)
             } catch (e: Exception) {
                 Log.w("MarkItEditor", "could not record rename: ${e.message}")

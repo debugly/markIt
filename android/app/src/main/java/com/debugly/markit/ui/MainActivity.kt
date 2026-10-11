@@ -1,6 +1,7 @@
 package com.debugly.markit.ui
 
 import android.content.Intent
+import android.util.Log
 import android.net.Uri
 import android.os.Bundle
 import android.text.Editable
@@ -17,7 +18,10 @@ import androidx.recyclerview.widget.RecyclerView
 import com.debugly.markit.R
 import com.debugly.markit.model.FileNode
 import com.debugly.markit.storage.DocumentStore
+import com.debugly.markit.sync.FolderSyncConfig
 import com.debugly.markit.sync.SyncConfigStore
+import com.debugly.markit.sync.SyncCoordinator
+import com.debugly.markit.sync.WebDAVClient
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import java.util.concurrent.Executors
@@ -235,18 +239,50 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun confirmDelete(node: FileNode) {
+        // Only claim the remote copy goes too when a sync config actually covers
+        // this file. Otherwise the dialog would promise a deletion that nothing
+        // is going to perform.
+        val folder = if (node.isDirectory) node.path else node.path.substringBeforeLast('/', "")
+        val config = syncConfigs.forFolder(folder)
+        val synced = config?.isConfigured == true
+        val scopeHint = if (synced) "将从本地和 WebDAV 一并删除。" else "将从本地删除。"
+
         AlertDialog.Builder(this)
             .setTitle("删除 ${node.name}？")
-            .setMessage("将从本地和 WebDAV 一并删除。")
+            .setMessage(scopeHint)
             .setPositiveButton("删除") { _, _ ->
                 val s = store ?: return@setPositiveButton
                 io.execute {
                     s.delete(node.path)
+                    // A delete is inferred remotely from the file going missing,
+                    // so record it explicitly. Otherwise the next pull would see
+                    // it absent locally and push it straight back.
+                    if (synced && config != null) {
+                        recordDeletionForSync(node.path, config)
+                    }
                     runOnUiThread { load() }
                 }
             }
             .setNegativeButton("取消", null)
             .show()
+    }
+
+    /** Records a local deletion so the next sync removes it from the server. */
+    private fun recordDeletionForSync(path: String, config: FolderSyncConfig) {
+        val uri = getSharedPreferences("markit", MODE_PRIVATE).getString("tree_uri", null)
+            ?: return
+        val st = store ?: return
+        try {
+            SyncCoordinator(
+                this,
+                st,
+                WebDAVClient(config.serverUrl, config.username, config.password),
+                config.remotePath,
+                config.folderPath
+            ).recordDeletion(path)
+        } catch (e: Exception) {
+            Log.w("MarkIt", "could not record deletion: ${e.message}")
+        }
     }
 
     private fun openExternally(node: FileNode) {

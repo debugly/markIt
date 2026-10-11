@@ -17,21 +17,27 @@ import org.json.JSONObject
 /**
  * Ported from Sources/MarkItApp/Sync/SyncCoordinator.swift.
  *
- * Same model as the macOS build: the vault is a local directory and WebDAV is a
+ * Same model as the macOS build: the local vault is the truth and WebDAV is a
  * mirror of it. A manifest records what each path looked like after the last
- * successful sync, which is what makes three-way-ish conflict detection possible
- * without a server-side database. Deletions are recorded separately so a delete
- * made offline propagates on the next sync instead of being undone by a re-download.
+ * successful sync, which is what makes conflict detection possible without a
+ * server-side database. Deletions are recorded separately so a delete made
+ * offline propagates on the next sync instead of being undone by a re-download.
  *
  * Everything here reads and writes the LOCAL tree. Offline is the normal case,
  * not a degraded one -- a failed sync leaves the local files untouched and just
  * updates [status].
+ *
+ * [localScope] restricts the coordinator to one folder inside the vault. It is
+ * the local half of a per-folder sync config, matching remoteRoot on the server
+ * side: configuring drafts and syncing drafts must not upload or delete posts.
+ * An empty scope means the whole vault.
  */
 class SyncCoordinator(
     private val context: Context,
     private val store: DocumentStore,
     private val client: WebDAVClient,
-    private val remoteRoot: String
+    private val remoteRoot: String,
+    private val localScope: String = ""
 ) {
     companion object {
         private const val TAG = "MarkItSync"
@@ -61,15 +67,22 @@ class SyncCoordinator(
     private var pendingDeletions: MutableSet<String> = mutableSetOf()
     private var loaded = false
 
-    private fun manifestFile() = store.uriFor(MANIFEST)
-    private fun deletionsFile() = store.uriFor(PENDING_DELETIONS)
+    /**
+     * Sync bookkeeping lives inside the scope so two folders cannot read each
+     * other's manifest. At the vault root it stays at the top level.
+     */
+    private fun scoped(path: String): String =
+        if (localScope.isEmpty()) path else "$localScope/$path"
+
+    private fun manifestFile() = store.uriFor(scoped(MANIFEST))
+    private fun deletionsFile() = store.uriFor(scoped(PENDING_DELETIONS))
 
     private fun loadState() {
         if (loaded) return
         loaded = true
         try {
-            manifestFile()?.let { uri ->
-                val json = JSONObject(store.readText(MANIFEST))
+            manifestFile()?.let {
+                val json = JSONObject(store.readText(scoped(MANIFEST)))
                 val obj = json.optJSONObject("entries") ?: JSONObject()
                 for (key in obj.keys()) {
                     val e = obj.getJSONObject(key)
@@ -79,10 +92,10 @@ class SyncCoordinator(
                         lastModified = e.optLong("lastModified", 0)
                     )
                 }
-                Log.i(TAG, "loaded manifest with ${manifest.size} entries")
+                Log.i(TAG, "loaded manifest with ${manifest.size} entries for scope '$localScope'")
             }
             deletionsFile()?.let {
-                val arr = org.json.JSONArray(store.readText(PENDING_DELETIONS))
+                val arr = org.json.JSONArray(store.readText(scoped(PENDING_DELETIONS)))
                 for (i in 0 until arr.length()) pendingDeletions.add(arr.getString(i))
             }
         } catch (e: Exception) {
@@ -103,12 +116,15 @@ class SyncCoordinator(
                     .put("contentLength", v.contentLength)
                     .put("lastModified", v.lastModified))
             }
-            store.writeText(MANIFEST, JSONObject().put("entries", obj).toString(2))
+            store.writeText(scoped(MANIFEST), JSONObject().put("entries", obj).toString(2))
 
             if (pendingDeletions.isNotEmpty()) {
                 val arr = org.json.JSONArray()
                 pendingDeletions.forEach { arr.put(it) }
-                store.writeText(PENDING_DELETIONS, arr.toString(2))
+                store.writeText(scoped(PENDING_DELETIONS), arr.toString(2))
+            } else {
+                // Clear a stale list so an applied delete does not replay.
+                store.delete(scoped(PENDING_DELETIONS))
             }
         } catch (e: Exception) {
             Log.w(TAG, "could not persist sync state: ${e.message}")
@@ -128,11 +144,10 @@ class SyncCoordinator(
 
     fun recordDeletion(path: String) {
         loadState()
-        // Only relative paths inside this vault are ours to delete remotely.
-        if (!path.startsWith(MANIFEST) && !path.startsWith(PENDING_DELETIONS)) {
-            pendingDeletions.add(path)
-            saveState()
-        }
+        // Only relative paths inside this scope are ours to delete remotely.
+        if (!inScope(path)) return
+        if (isStateFile(path)) return
+        if (pendingDeletions.add(path)) saveState()
     }
 
     fun removePendingDeletion(path: String) {
@@ -144,6 +159,26 @@ class SyncCoordinator(
         loadState()
         if (path in pendingDeletions) return Status.MODIFIED
         return _status.value
+    }
+
+    /** True when [path] lies inside this coordinator's folder. */
+    private fun inScope(path: String): Boolean =
+        localScope.isEmpty() || path == localScope || path.startsWith("$localScope/")
+
+    /**
+     * Path relative to the scope, which is how both the manifest and the remote
+     * layout are keyed. A path outside the scope is not this coordinator's.
+     */
+    private fun relativeToScope(path: String): String? = when {
+        localScope.isEmpty() -> path
+        path == localScope -> ""
+        path.startsWith("$localScope/") -> path.removePrefix("$localScope/")
+        else -> null
+    }
+
+    private fun isStateFile(path: String): Boolean {
+        val base = path.substringAfterLast('/')
+        return base == MANIFEST || base == PENDING_DELETIONS
     }
 
     suspend fun sync(): Result = withContext(Dispatchers.IO) {
@@ -158,16 +193,17 @@ class SyncCoordinator(
 
                 val pushed = pushLocalChanges()
                 val pulled = pullRemoteChanges()
+                val removed = pushPendingDeletions()
 
                 manifest.clear()
                 manifest.putAll(snapshotLocal())
 
-                // Deletions that were applied remotely drop off the list.
+                // Deletions that reached the server drop off the list.
                 pendingDeletions.clear()
 
                 saveState()
                 _status.value = Status.SYNCED
-                Log.i(TAG, "sync done: pushed=$pushed pulled=$pulled")
+                Log.i(TAG, "sync done for '$localScope': pushed=$pushed pulled=$pulled deleted=$removed")
                 Result.Success
             } catch (e: Exception) {
                 val msg = e.message ?: "同步失败"
@@ -192,44 +228,72 @@ class SyncCoordinator(
             }
         } ?: false
 
+    /**
+     * The scope's contents, keyed by path relative to the scope. Walking starts
+     * at localScope rather than the vault root, which is what keeps one folder's
+     * sync from touching its siblings.
+     */
     private fun snapshotLocal(): MutableMap<String, ManifestEntry> {
         val snap = mutableMapOf<String, ManifestEntry>()
         fun walk(path: String) {
             val nodes = try { store.list(path) } catch (e: Exception) { emptyList() }
             for (n in nodes) {
-                if (n.path == MANIFEST || n.path == PENDING_DELETIONS) continue
-                snap[n.path] = ManifestEntry(n.isDirectory, n.size, n.modifiedAt)
+                if (isStateFile(n.path)) continue
+                val rel = relativeToScope(n.path) ?: continue
+                snap[rel] = ManifestEntry(n.isDirectory, n.size, n.modifiedAt)
                 if (n.isDirectory) walk(n.path)
             }
         }
-        walk("")
+        walk(localScope)
         return snap
     }
 
-    /** Uploads locally changed/new files. */
+    /** Uploads locally changed/new files inside the scope. */
     private suspend fun pushLocalChanges(): Int {
         val current = snapshotLocal()
         var pushed = 0
 
-        for ((path, entry) in current) {
+        for ((rel, entry) in current) {
             if (entry.isDirectory) continue
-            val old = manifest[path]
+            val old = manifest[rel]
             if (old != null && old.contentLength == entry.contentLength &&
                 old.lastModified == entry.lastModified) {
                 continue
             }
+            val localPath = if (localScope.isEmpty()) rel else "$localScope/$rel"
             try {
-                client.upload("$remoteRoot/$path", store.readBytes(path))
+                client.upload(remotePathFor(rel), store.readBytes(localPath))
                 pushed++
             } catch (e: Exception) {
-                Log.w(TAG, "push skipped $path: ${e.message}")
+                Log.w(TAG, "push skipped $localPath: ${e.message}")
             }
         }
         return pushed
     }
 
+    private fun remotePathFor(rel: String): String =
+        if (rel.isEmpty()) remoteRoot else "$remoteRoot/$rel"
+
+    private fun localPathFor(rel: String): String =
+        if (localScope.isEmpty()) rel else "$localScope/$rel"
+
+    /** Applies deletions recorded offline, now that the server is reachable. */
+    private suspend fun pushPendingDeletions(): Int {
+        var removed = 0
+        for (rel in pendingDeletions.toList()) {
+            try {
+                client.delete(remotePathFor(rel))
+                pendingDeletions.remove(rel)
+                removed++
+            } catch (e: Exception) {
+                Log.w(TAG, "remote delete failed for $rel: ${e.message}")
+            }
+        }
+        return removed
+    }
+
     /**
-     * Downloads remote files this vault has never seen. Files already present
+     * Downloads remote files this scope has never seen. Files already present
      * are left alone -- a local copy that differs is an edit, and the macOS app
      * treats the user's edit as the truth too.
      */
@@ -239,14 +303,16 @@ class SyncCoordinator(
 
         for (n in remote) {
             if (n.isDirectory) {
-                try { client.ensureDirectory("$remoteRoot/${n.path}") } catch (e: Exception) { }
-                try { store.createDirectory(n.path) } catch (e: Exception) { }
+                val localDir = localPathFor(n.path)
+                try { client.ensureDirectory(remotePathFor(n.path)) } catch (e: Exception) { }
+                try { store.createDirectory(localDir) } catch (e: Exception) { }
                 continue
             }
             if (manifest.containsKey(n.path)) continue
+            val localPath = localPathFor(n.path)
             try {
-                val data = client.download("$remoteRoot/${n.path}")
-                store.writeText(n.path, data.toString(Charsets.UTF_8))
+                val data = client.download(remotePathFor(n.path))
+                store.writeText(localPath, data.toString(Charsets.UTF_8))
                 pulled++
             } catch (e: Exception) {
                 Log.w(TAG, "pull skipped ${n.path}: ${e.message}")

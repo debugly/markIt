@@ -221,7 +221,10 @@ class SyncFragment : Fragment() {
                         requireContext(),
                         DocumentStore(requireContext(), uri),
                         WebDAVClient(config.serverUrl, config.username, config.password),
-                        config.remotePath
+                        config.remotePath,
+                        // Scope the local side to this folder too: configuring
+                        // drafts must not upload or delete posts.
+                        folderPath
                     )
                     when (val r = coordinator.sync()) {
                         is SyncCoordinator.Result.Success -> {
