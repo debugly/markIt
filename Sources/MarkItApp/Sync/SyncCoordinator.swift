@@ -301,6 +301,14 @@ public final class SyncCoordinator: ObservableObject, @unchecked Sendable {
         scheduleDebouncedAutoSync(for: cfg.id)
     }
 
+    /// Debounce window before an automatic sync runs.
+    ///
+    /// 30 seconds, matching the Android client. The two share the same WebDAV
+    /// servers, and a note edited on one platform is usually edited on the
+    /// other shortly after; two different windows meant the same change could
+    /// upload twice, minutes apart, from whichever side reacted first.
+    public static let autoSyncDebounce: TimeInterval = 30.0
+
     public func scheduleDebouncedAutoSync(for configId: UUID) {
         autoSyncTimers[configId]?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
@@ -310,7 +318,10 @@ public final class SyncCoordinator: ObservableObject, @unchecked Sendable {
             }
         }
         autoSyncTimers[configId] = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 4.0, execute: workItem)
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + Self.autoSyncDebounce,
+            execute: workItem
+        )
     }
 
     // MARK: - Synchronization Engine
