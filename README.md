@@ -2,13 +2,31 @@
 
 本地优先的 Markdown 笔记应用。文件存在你自己的目录里，同步是可选的镜像，不是依赖。
 
-![MarkIt on macOS](docs/images/screenshot-macos.png)
-
 ## 它是什么
 
 一个离线可用的 Markdown 编辑器：源码和所见即所得两种模式，随时切换。左边是文件树，右边是编辑器。没有账号，没有云端，没有网络也能用。
 
 WebDAV 同步是加上去的，不是必需的。不配同步，它就是一个纯本地应用；配了，同步也只是单向镜像到你的服务器。
+
+## 两个平台
+
+macOS 和 Android 是同一个应用的两份实现，同一份文件格式，同一个同步逻辑。
+
+macOS 是文件树加编辑器分栏，`Cmd+S` 立即保存并同步：
+
+![macOS 文件树和编辑器](docs/images/screenshot-macos.png)
+
+Android 是单栏，列表进编辑器。默认按目录分组，面包屑右边的图标切到平铺，也就是文件夹和文件混在一起。进子目录和退回根目录各自独立，切过的状态不会带到下一层：
+
+![Android 分组列表](docs/images/and-folder-level.png)
+
+平铺模式，标题栏是选中的目录名：
+
+![Android 平铺列表](docs/images/and-root-flat.png)
+
+打开笔记直接进所见即所得，源码是同一个页面里的一个开关，不是另一个页面。改 Markdown 和看渲染结果本来就是看同一篇文档的两种方式，不该为此多一个页面：
+
+![Android 所见即所得](docs/images/and-editor.png)
 
 ## 设计上的几个选择
 
