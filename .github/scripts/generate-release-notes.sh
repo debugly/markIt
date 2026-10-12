@@ -79,6 +79,12 @@ sed -e "s#](\./#](https://github.com/${REPO}/blob/${TAG}/#g" \
   echo "| macOS | \`MarkIt-${VERSION}.zip\` | 解压后把 MarkIt.app 拖进「应用程序」|"
   echo "| Android | \`MarkIt-${VERSION}.apk\` | 安装需要允许「未知来源」|"
   echo
+  # Three files ship, but only two are for using the app. Saying so here saves
+  # the person reading this from wondering what the third one is for.
+  echo "普通用户只需要上面两个。同一 release 里还有 \`MarkIt-${VERSION}-dSYM.zip\`，"
+  echo "那是崩溃符号表，只在排查崩溃时用得上：崩溃日志里只有 UUID 和加载地址，"
+  echo "要还原成源码行号必须配对「那个构建」的符号表。"
+  echo
   echo "### macOS"
   echo
   echo "这个版本没有开发者证书签名（没有 Apple Developer 账号的自动签名）。"
