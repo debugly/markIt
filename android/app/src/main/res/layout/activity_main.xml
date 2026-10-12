@@ -2,6 +2,7 @@
 <androidx.constraintlayout.widget.ConstraintLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/bg_canvas"
@@ -37,11 +38,34 @@
         />
     </LinearLayout>
 
+    <!--
+      The folder the user actually picked. Without it the root listing showed
+      folders and notes with nothing above them saying where any of it was, so
+      "MarkIt" and "MarkIt2" looked identical until you were already lost in
+      one of them.
+    -->
+    <TextView
+        android:id="@+id/rootTitle"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingTop="6dp"
+        android:paddingBottom="2dp"
+        android:textSize="19sp"
+        android:textStyle="bold"
+        android:textColor="@color/fg_default"
+        android:visibility="gone"
+        app:layout_constraintTop_toBottomOf="@id/searchBar"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        tools:ignore="RtlSymmetry" />
+
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/fileList"
         android:layout_width="0dp"
         android:layout_height="0dp"
-        app:layout_constraintTop_toBottomOf="@id/searchBar"
+        app:layout_constraintTop_toBottomOf="@id/rootTitle"
         app:layout_constraintBottom_toTopOf="@id/bottomBar"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />

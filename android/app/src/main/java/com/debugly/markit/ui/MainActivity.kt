@@ -34,6 +34,7 @@ class MainActivity : AppCompatActivity(), BrowseFragment.Host, SettingsFragment.
     private lateinit var adapter: FileListAdapter
     private lateinit var searchField: EditText
     private lateinit var emptyState: TextView
+    private lateinit var rootTitle: TextView
     private var fab: FloatingActionButton? = null
 
     private var store: DocumentStore? = null
@@ -174,6 +175,7 @@ class MainActivity : AppCompatActivity(), BrowseFragment.Host, SettingsFragment.
         searchField = findViewById(R.id.searchField)
         recentFiles = RecentFiles(this)
         emptyState = findViewById(R.id.emptyState)
+        rootTitle = findViewById(R.id.rootTitle)
         fab = findViewById(R.id.fabNew)
 
         adapter = FileListAdapter(onClick = ::openNode, onLongClick = ::showNodeActions)
@@ -282,6 +284,7 @@ class MainActivity : AppCompatActivity(), BrowseFragment.Host, SettingsFragment.
      */
     private fun showChrome(visible: Boolean) {
         val v = if (visible) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.rootTitle).visibility = v
         findViewById<View>(R.id.searchBar).visibility = v
         findViewById<View>(R.id.fileList).visibility = v
         findViewById<View>(R.id.emptyState).visibility = v
@@ -320,10 +323,19 @@ class MainActivity : AppCompatActivity(), BrowseFragment.Host, SettingsFragment.
 
     private fun load() {
         val s = store ?: run {
+            rootTitle.visibility = View.GONE
             emptyState.text = "未选择文件夹"
             emptyState.visibility = View.VISIBLE
             return
         }
+        // Name the vault. Two vaults holding folders of the same name are
+        // indistinguishable otherwise, and which one is open is the first
+        // thing worth knowing on this screen.
+        // describeRoot() hands back the full document id path; only the last
+        // segment is the folder the user chose. "Download/MarkIt" reads as a
+        // location the app picked rather than the one it was given.
+        rootTitle.text = s.describeRoot().substringAfterLast('/')
+        rootTitle.visibility = View.VISIBLE
         io.execute {
             val nodes = try { s.list(currentPath) } catch (e: Exception) { emptyList() }
             runOnUiThread {
