@@ -333,7 +333,7 @@ class MainActivity : AppCompatActivity(), BrowseFragment.Host, SettingsFragment.
         // thing worth knowing on this screen.
         // describeRoot() hands back the full document id path; only the last
         // segment is the folder the user chose. "Download/MarkIt" reads as a
-        // location the app picked rather than the one it was given.
+        // location the app chose rather than the one it was given.
         rootTitle.text = s.describeRoot().substringAfterLast('/')
         rootTitle.visibility = View.VISIBLE
         io.execute {
@@ -351,19 +351,31 @@ class MainActivity : AppCompatActivity(), BrowseFragment.Host, SettingsFragment.
 
         val rows = mutableListOf<Row>()
         val dirs = shown.filter { it.isDirectory }
-        // The second section is what the user last worked on rather than an
-        // alphabetical listing of the folder. Browsing the full tree is still
-        // what entering a directory is for, so nothing is lost by dropping the
-        // flat file list from here.
+        val files = shown.filter { !it.isDirectory }
         val recents = recentEntries()
 
-        if (dirs.isNotEmpty() && filter.isBlank()) {
-            rows.add(Row.Section("目录"))
-            dirs.forEach { rows.add(Row.Entry(it, null, syncConfigs.isSynced(it.path))) }
+        // One flat list: folders first, then notes, then whatever was opened
+        // recently that is not already listed. Section headers told the user
+        // something they could see for themselves -- whether an item is a
+        // folder is in its own icon -- while splitting a short list into three
+        // labelled groups and leaving most of them empty.
+        val listed = mutableSetOf<String>()
+        val ordered = dirs + files
+        ordered.forEach {
+            rows.add(Row.Entry(it, null,
+                isSynced = syncConfigs.isSynced(it.path),
+                isPendingSync = if (it.isDirectory) false else isPendingSync(it)))
+            listed.add(it.path)
         }
-        if (recents.isNotEmpty()) {
-            rows.add(Row.Section(if (filter.isBlank()) "最近打开" else "匹配 ${recents.size} 项"))
-            recents.forEach { rows.add(Row.Entry(it, null, isPendingSync = isPendingSync(it))) }
+        // Recent entries that are not already on screen: a note opened from
+        // another folder, which browsing this one should not hide.
+        val extraRecents = recents.filter { it.path !in listed }
+        if (extraRecents.isNotEmpty()) {
+            if (rows.none { it is Row.Section }) rows.add(Row.Section("最近打开"))
+            extraRecents.forEach { rows.add(Row.Entry(it, null, isPendingSync = isPendingSync(it))) }
+        }
+        if (ordered.isEmpty() && extraRecents.isEmpty()) {
+            rows.add(Row.Section(if (filter.isBlank()) "" else "匹配 ${recents.size} 项"))
         }
         adapter.submit(rows)
 
@@ -371,7 +383,7 @@ class MainActivity : AppCompatActivity(), BrowseFragment.Host, SettingsFragment.
         // again, so the empty state has to be updated here too. Without it a
         // filter matching nothing left a blank screen with no indication that
         // the app was alive and simply had no match.
-        updateEmptyState(dirs.isEmpty() && recents.isEmpty())
+        updateEmptyState(dirs.isEmpty() && files.isEmpty() && recents.isEmpty())
     }
 
     /**
