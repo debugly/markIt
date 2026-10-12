@@ -1,7 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  A single M cut out of a rounded document shape.
+
+  The outline and the letter must be one path with evenOdd fill. As two
+  separate paths in the same colour, the letter lands inside the fill and the
+  icon renders as a solid block; evenOdd turns the overlap into a hole, which
+  is what makes the M visible.
+
+  The M spans x 8.1 to 15.9 and y 8.6 to 15.4, so both of its centres sit at
+  12.0, the centre of the 3..21 by 4..20 document outline. Nudging either range
+  shifts the letter off centre in a way that reads as sloppy rather than as a
+  design choice.
+
+  This used to carry a down arrow after the M, which at list size read as
+  "ME" rather than as a letter.
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp" android:height="24dp"
     android:viewportWidth="24" android:viewportHeight="24">
     <path android:fillColor="@color/type_markdown"
-        android:pathData="M3,5.5C3,4.7 3.7,4 4.5,4h15C20.3,4 21,4.7 21,5.5v13c0,0.8 -0.7,1.5 -1.5,1.5h-15C3.7,20 3,19.3 3,18.5V5.5zM5.5,10v4h1.2v-2.5L8.2,14h0.6l1.5,-2.5V14h1.2v-4H9.9L8.5,12.1L7.1,10H5.5zM12.5,10v4h3.2v-1.1h-2.1v-0.6h1.9v-1.1h-1.9v-0.6h2.1V10H12.5z" />
+        android:fillType="evenOdd"
+        android:pathData="M3,5.5C3,4.7 3.7,4 4.5,4h15C20.3,4 21,4.7 21,5.5v13c0,0.8 -0.7,1.5 -1.5,1.5h-15C3.7,20 3,19.3 3,18.5V5.5zM8.1,8.6h1.9l2,3.1l2,-3.1h1.9v6.8h-1.5v-4.2l-1.9,2.9h-0.6l-1.9,-2.9v4.2H8.1z" />
 </vector>
