@@ -41,9 +41,32 @@ final class MarkitUITests: XCTestCase {
     // MARK: - 工具
 
     /// 以 `--uitest-reset` 启动，保证每次测试都从确定性的空状态开始。
-    private func launchApp(arguments: [String] = []) -> XCUIApplication {
+    ///
+    /// Suite backing the next launch, unique per test.
+    ///
+    /// Each test gets its own because a suite name is a UserDefaults domain
+    /// that outlives the process: reusing one would let state bleed between
+    /// tests, and wiping a shared one would only be safe as long as no real
+    /// data ever landed there.
+    private var nextSuiteName: String {
+        suiteCounter += 1
+        return "com.debugly.markit.uitest.\(ProcessInfo.processInfo.processIdentifier).\(suiteCounter)"
+    }
+
+    private var suiteCounter = 0
+
+    /// Launches the app against an isolated preferences suite.
+    ///
+    /// `--uitest-suite` is what keeps a test run away from the real
+    /// com.debugly.markit store. `--uitest-reset` on its own would clear the
+    /// user's bookmarks and recent files; AppState refuses to run it without a
+    /// suite, so these two arguments travel together by construction.
+    func launchApp(arguments: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["--uitest-reset"] + arguments
+        app.launchArguments = [
+            "--uitest-reset",
+            "--uitest-suite", nextSuiteName
+        ] + arguments
         app.launch()
         return app
     }
@@ -57,6 +80,39 @@ final class MarkitUITests: XCTestCase {
     }
 
     // MARK: - 测试
+
+    /// ⌘S 保存：有改动时写盘并提示，无改动时说明已是最新。
+    ///
+    /// Autosave makes the manual save a no-op most of the time, so the
+    /// assertion that matters is the feedback: a keypress with no response
+    /// reads as a broken shortcut rather than as "already saved".
+    func testCommandSSavesAndReports() {
+        let app = launchApp(arguments: [markdownFixtureURL.path])
+
+        let stats = app.staticTexts["statsLabel"]
+        XCTAssertTrue(stats.waitForExistence(timeout: 15), "字数统计应出现")
+
+        // No edits yet: saving should say so rather than look swallowed.
+        app.typeKey("s", modifierFlags: .command)
+
+        let upToDate = NSPredicate(format: "value CONTAINS %@", "无需保存")
+        expectation(for: upToDate, evaluatedWith: stats)
+        waitForExpectations(timeout: 5)
+
+        // The confirmation clears itself, putting the counts back.
+        let backToCounts = NSPredicate(format: "value CONTAINS %@", "行")
+        expectation(for: backToCounts, evaluatedWith: stats)
+        waitForExpectations(timeout: 6)
+
+        // The menu item shows up where shortcuts are looked up, and is enabled
+        // with a document open. The shortcut itself is verified by the keypress
+        // above -- macOS XCUIElement exposes no keyEquivalent to assert on.
+        app.menuBars.menuBarItems["文件"].click()
+        let saveItem = app.menuItems["保存"]
+        XCTAssertTrue(saveItem.waitForExistence(timeout: 5), "「保存」菜单项应存在")
+        XCTAssertTrue(saveItem.isEnabled, "打开文档后「保存」应可用")
+        app.typeKey(.escape, modifierFlags: [])
+    }
 
     /// 1. 应用能正常启动，主窗口 + 侧边栏 + 占位内容可见。
     func testAppLaunchesWithMainWindowAndPlaceholder() {
