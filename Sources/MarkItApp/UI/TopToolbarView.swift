@@ -188,6 +188,13 @@ final class TopToolbarView: NSView {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.updateModeButton() }
             .store(in: &cancellables)
+
+        // Cmd+S feedback. Autosave means the manual save is usually a no-op,
+        // so without this the keypress looks like nothing happened.
+        state.$statusMessage
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.updateStats() }
+            .store(in: &cancellables)
     }
 
     private func updateUI() {
@@ -234,6 +241,13 @@ final class TopToolbarView: NSView {
     }
 
     private func updateStats() {
+        // A transient "已保存" replaces the counts while it is showing: it is
+        // the answer to the keypress the user just pressed, and the counts
+        // would just push it out of the way.
+        if let status = state.statusMessage {
+            statsLabel.stringValue = status
+            return
+        }
         guard let url = document.url else {
             statsLabel.stringValue = ""
             return

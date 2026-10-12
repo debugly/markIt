@@ -168,6 +168,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         let openFolderItem = fileMenu.addItem(withTitle: "打开文件夹...", action: #selector(menuOpenFolder), keyEquivalent: "o")
         openFolderItem.keyEquivalentModifierMask = [.command, .shift]
 
+        // Cmd+S is the one shortcut almost every Mac user already reaches for
+        // when they finish typing. It is a menu item rather than a key handler
+        // so the shortcut shows up where shortcuts are looked up, and so it
+        // keeps working while a web view or text view holds focus.
+        fileMenu.addItem(withTitle: "保存", action: #selector(menuSave), keyEquivalent: "s")
+
         fileMenu.addItem(withTitle: "添加 WebDAV 文件夹...", action: #selector(menuAddWebDAVFolder), keyEquivalent: "")
         let syncAllItem = fileMenu.addItem(withTitle: "立即同步全部 WebDAV", action: #selector(menuSyncAllWebDAV), keyEquivalent: "s")
         syncAllItem.keyEquivalentModifierMask = [.command, .shift]
@@ -322,6 +328,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         dialog.window?.makeKeyAndOrderFront(nil)
     }
 
+    @objc private func menuSave() {
+        appState.saveCurrentDocument()
+    }
+
     @objc private func menuSyncAllWebDAV() {
         SyncCoordinator.shared.syncAll()
     }
@@ -341,7 +351,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     // MARK: - NSMenuItemValidation
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        if menuItem.action == #selector(menuExportHTML) {
+        // Saving and exporting both need an open document. Leaving Save enabled
+        // with nothing open makes it look like it worked when nothing happened.
+        if menuItem.action == #selector(menuExportHTML) || menuItem.action == #selector(menuSave) {
             return appState.document.url != nil
         }
         return true

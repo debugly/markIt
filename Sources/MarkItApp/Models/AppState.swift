@@ -21,6 +21,11 @@ final class AppState: ObservableObject {
         case wysiwyg
         case source
     }
+    /// Transient "已保存" style feedback, cleared by showTransientStatus.
+    @Published var statusMessage: String?
+
+    private var statusClearTask: Task<Void, Never>?
+
     @Published var editMode: EditMode = .wysiwyg
 
     func toggleEditMode() {
@@ -570,6 +575,63 @@ final class AppState: ObservableObject {
     private func updateLastSelectionIfPossible() {
         if let url = selection, let node = findNode(matching: url, in: tree), node.isDirectory == false {
             lastSelectedFileURL = url
+        }
+    }
+
+    /// Saves the open document, for Cmd+S.
+    ///
+    /// Separate from the switch path's saveIfDirty because a deliberate save
+    /// has to be honest about failure. saveIfDirty returning false during a
+    /// switch is covered by the unsaved-changes prompt, but Cmd+S is the user
+    /// saying "put this on disk now", and a write that fails there has to be
+    /// reported rather than silently doing nothing.
+    ///
+    /// A document with no URL is a new file and still needs the save panel.
+    func saveCurrentDocument() {
+        guard let url = document.url else {
+            // A brand new document has nowhere to go yet, so this needs the
+            // panel before anything can be written.
+            beginSavePanel(defaultName: "未命名.md") { [weak self] target in
+                guard let self = self, let target = target else { return }
+                if self.document.saveNow(to: target) {
+                    self.document.updateURL(target)
+                    self.showTransientStatus("已保存")
+                }
+            }
+            return
+        }
+
+        guard document.isDirty else {
+            // Already on disk. Doing nothing is right, but saying so beats
+            // leaving the keypress looking like it was swallowed.
+            showTransientStatus("已是最新，无需保存")
+            return
+        }
+
+        guard document.saveNow(to: url) else {
+            let alert = NSAlert()
+            alert.messageText = "无法保存"
+            alert.informativeText = "\(url.lastPathComponent) 写入失败，可能没有写入权限。"
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "好")
+            alert.runModal()
+            return
+        }
+
+        showTransientStatus("已保存")
+    }
+
+    /// A short confirmation, cleared on its own.
+    ///
+    /// Autosave means a manual save is usually a no-op, and without any
+    /// response the keypress reads as broken rather than as "already done".
+    private func showTransientStatus(_ message: String) {
+        statusMessage = message
+        statusClearTask?.cancel()
+        statusClearTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 1_800_000_000)
+            guard !Task.isCancelled, let self = self, self.statusMessage == message else { return }
+            self.statusMessage = nil
         }
     }
 
