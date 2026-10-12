@@ -599,6 +599,7 @@ final class AppState: ObservableObject {
                 guard let self = self, let target = target else { return }
                 if self.document.saveNow(to: target) {
                     self.document.updateURL(target)
+                    SyncCoordinator.shared.flushPendingSync(for: target)
                     self.showTransientStatus("已保存")
                 }
             }
@@ -621,6 +622,12 @@ final class AppState: ObservableObject {
             alert.runModal()
             return
         }
+
+        // Only after a real write. An unsynced cloud badge means "there are
+        // local changes waiting to go up", and this is where they go up --
+        // rather than leaving the user watching an orange cloud for 30
+        // seconds after asking the app to save.
+        SyncCoordinator.shared.flushPendingSync(for: url)
 
         showTransientStatus("已保存")
     }

@@ -309,6 +309,26 @@ public final class SyncCoordinator: ObservableObject, @unchecked Sendable {
     /// upload twice, minutes apart, from whichever side reacted first.
     public static let autoSyncDebounce: TimeInterval = 30.0
 
+    /// Runs the pending debounced sync for `url` right now.
+    ///
+    /// Cmd+S means "I am done editing" -- the same thing 30 seconds of
+    /// silence means. Rather than a separate fast path, this cancels the
+    /// pending timer and runs exactly what that timer would have run, so the
+    /// two cannot drift apart.
+    ///
+    /// The cloud badge only clears on a real upload, so this is what makes it
+    /// disappear: the sync has to actually complete. That is deliberate --
+    /// clearing the badge on save would claim the change was uploaded when it
+    /// was only written to disk.
+    public func flushPendingSync(for url: URL) {
+        guard let cfg = config(for: url) else { return }
+        autoSyncTimers[cfg.id]?.cancel()
+        autoSyncTimers.removeValue(forKey: cfg.id)
+        Task { [weak self] in
+            await self?.syncFolder(configId: cfg.id)
+        }
+    }
+
     public func scheduleDebouncedAutoSync(for configId: UUID) {
         autoSyncTimers[configId]?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
