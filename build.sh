@@ -5,7 +5,8 @@ cd "$(dirname "$0")"
 #   MARKIT_DEST     构建完成后把 .app 放哪。默认 /Applications（本地开发习惯）。
 #                   传一个目录就 rsync 到那里，传空字符串就完全不拷贝。
 #   MARKIT_OPEN     1 = 构建完自动打开（本地默认）。其他值 = 不打开。
-#   MARKIT_KEEP_DSYM 1 = 同时把 dSYM 拷到 MARKIT_DEST 的同级目录。
+#   MARKIT_KEEP_DSYM 1 = 把 dSYM 导出到 build/（供 CI 打包 artifact），不拷进
+#                     MARKIT_DEST —— 用户不需要它。
 #   MARKIT_BUILD    CURRENT_PROJECT_VERSION（build 号）的值。默认取当天日期 MMdd。
 #                   刻意和 MARKETING_VERSION 分开：后者是 0.4.0 这样的对外版本号，
 #                   前者是每次构建都要变大的编号，拿版本号去填会让两次构建的
@@ -56,13 +57,11 @@ if [[ "$KEEP_DSYM" == "1" ]]; then
     echo "::error::no dSYM found in the archive" >&2
     exit 1
   fi
-  # 无论如何都留一份在 build/ 里给 CI 打包用
+  # 只留一份在 build/ 里，那是给 CI 打包 dSYM artifact 用的。不再拷进 DEST：
+  # DEST 是用户会翻的地方（/Applications，或 CI 里的 dist/），符号文件出现在
+  # 那里只会占地方，压缩包也会平白变大几 MB。
   cp -pPR "$DSYM_SRC" ./build/
   echo "dSYM at ./build/$(basename "$DSYM_SRC")"
-  if [[ -n "$DEST" ]]; then
-    cp -pPR "$DSYM_SRC" "$DEST/"
-    echo "copied dSYM to $DEST"
-  fi
 fi
 
 if [[ "$OPEN" == "1" ]]; then

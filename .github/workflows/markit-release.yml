@@ -100,17 +100,35 @@ jobs:
           ./build.sh
         ls -la dist
 
+    # zip 里只有 app。dSYM 单独走 artifact：它只在分析崩溃时有用，而那种时候要
+    # 的是日志旁边的那一份符号表，不是让用户从下载列表里翻一个包。塞进 zip
+    # 会白白多占几 MB，还让人以为解压出来的东西该往「应用程序」里拖。
     - name: Package macOS Zip
       run: |
         set -euo pipefail
         set -a; source release-constants.env; set +a
         cd dist
-        # dSYM 和 app 平级，不塞进 app 里面：用户解压之后要看到的是一个能直接
-        # 拖进「应用程序」的 app，而不是一堆给开发者看的符号文件。
-        zip -ryq "MarkIt-${VERSION}.zip" Markit.app Markit.app.dSYM
-        # zip 会保留符号链接，目标机解压时要跟随，不然 app 内部相对链接会断
-        zip -ryqT "MarkIt-${VERSION}.zip" Markit.app Markit.app.dSYM 2>/dev/null || true
+        # 不用 -y：它只对符号链接有意义，而这里存的必须是解引用后的真实文件，
+        # 换成跨机器解压时的链接会在 app 内部断掉。
+        zip -rq "MarkIt-${VERSION}.zip" Markit.app
         ls -l
+
+    # dSYM 取 build.sh 导出到 build/ 的那一份，不再复制进 dist/。
+    - name: Move dSYM out of the user download
+      run: |
+        set -euo pipefail
+        set -a; source release-constants.env; set +a
+        mkdir -p debug-symbols
+        DSYM="$(find build -maxdepth 1 -name '*.dSYM' | head -1)"
+        if [[ -z "$DSYM" ]]; then
+          echo "::error::no dSYM in build/ -- MARKIT_KEEP_DSYM may not have run" >&2
+          exit 1
+        fi
+        mv "$DSYM" debug-symbols/
+        echo "dSYM kept for crash analysis: $(basename "$DSYM")"
+        # 用户会下载的目录里不能有它
+        test ! -e "dist/Markit.app.dSYM" || {
+          echo "::error::dSYM is still in dist/" >&2; exit 1; }
 
     # ---- Android ----
     #
@@ -171,10 +189,18 @@ jobs:
           --title "MarkIt ${TAG}" --notes-file release-notes.md \
           $PRERELEASE_FLAG "${ASSETS[@]}"
 
-    # artifact 是给 CI 自查用的（run 页面底部，需要登录 GitHub 才能下载）。
-    - name: Upload artifacts
+    # artifact 供 CI 自查和崩溃分析（run 页面底部，需要登录 GitHub 才能下载）。
+    # dSYM 单独一份，不会混进 dist/。
+    - name: Upload release assets
       uses: actions/upload-artifact@v4
       with:
         name: markit-release
         path: dist/
         retention-days: 30
+
+    - name: Upload dSYM
+      uses: actions/upload-artifact@v4
+      with:
+        name: markit-dsym
+        path: debug-symbols/
+        retention-days: 90
