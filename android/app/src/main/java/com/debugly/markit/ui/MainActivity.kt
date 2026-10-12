@@ -35,6 +35,15 @@ class MainActivity : AppCompatActivity(), BrowseFragment.Host, SettingsFragment.
     private lateinit var searchField: EditText
     private lateinit var emptyState: TextView
     private lateinit var rootTitle: TextView
+    private lateinit var groupToggle: android.widget.ImageButton
+
+    /**
+     * Whether folders and notes are listed under separate headings.
+     *
+     * Same flag and same default as the folder levels, so descending a level
+     * does not change how the list is sorted without being asked to.
+     */
+    private var grouped = false
     private var fab: FloatingActionButton? = null
 
     private var store: DocumentStore? = null
@@ -176,6 +185,9 @@ class MainActivity : AppCompatActivity(), BrowseFragment.Host, SettingsFragment.
         recentFiles = RecentFiles(this)
         emptyState = findViewById(R.id.emptyState)
         rootTitle = findViewById(R.id.rootTitle)
+        groupToggle = findViewById(R.id.btnGroupMode)
+        groupToggle.setOnClickListener { grouped = !grouped; applyGroupIcon(); rebuildRows() }
+        applyGroupIcon()
         fab = findViewById(R.id.fabNew)
 
         adapter = FileListAdapter(onClick = ::openNode, onLongClick = ::showNodeActions)
@@ -284,7 +296,11 @@ class MainActivity : AppCompatActivity(), BrowseFragment.Host, SettingsFragment.
      */
     private fun showChrome(visible: Boolean) {
         val v = if (visible) View.VISIBLE else View.GONE
-        findViewById<View>(R.id.rootTitle).visibility = v
+        findViewById<View>(R.id.rootTitleRow).visibility = v
+        // The row and the title inside it are hidden separately: the title
+        // starts as gone and load() reveals it once there is a vault to name,
+        // while showChrome(false) has to hide the whole row on its own.
+        if (v == View.VISIBLE) rootTitle.visibility = View.VISIBLE
         findViewById<View>(R.id.searchBar).visibility = v
         findViewById<View>(R.id.fileList).visibility = v
         findViewById<View>(R.id.emptyState).visibility = v
@@ -323,7 +339,7 @@ class MainActivity : AppCompatActivity(), BrowseFragment.Host, SettingsFragment.
 
     private fun load() {
         val s = store ?: run {
-            rootTitle.visibility = View.GONE
+            findViewById<View>(R.id.rootTitleRow).visibility = View.GONE
             emptyState.text = "未选择文件夹"
             emptyState.visibility = View.VISIBLE
             return
@@ -336,6 +352,7 @@ class MainActivity : AppCompatActivity(), BrowseFragment.Host, SettingsFragment.
         // location the app chose rather than the one it was given.
         rootTitle.text = s.describeRoot().substringAfterLast('/')
         rootTitle.visibility = View.VISIBLE
+        findViewById<View>(R.id.rootTitleRow).visibility = View.VISIBLE
         io.execute {
             val nodes = try { s.list(currentPath) } catch (e: Exception) { emptyList() }
             runOnUiThread {
@@ -343,6 +360,14 @@ class MainActivity : AppCompatActivity(), BrowseFragment.Host, SettingsFragment.
                 rebuildRows()
             }
         }
+    }
+
+    /** The button shows the state you would switch to, not the one you are in. */
+    private fun applyGroupIcon() {
+        groupToggle.setImageResource(
+            if (grouped) R.drawable.ic_view_flat else R.drawable.ic_view_grouped
+        )
+        groupToggle.contentDescription = if (grouped) "改为平铺显示" else "改为分组显示"
     }
 
     private fun rebuildRows() {
@@ -354,27 +379,35 @@ class MainActivity : AppCompatActivity(), BrowseFragment.Host, SettingsFragment.
         val files = shown.filter { !it.isDirectory }
         val recents = recentEntries()
 
-        // One flat list: folders first, then notes, then whatever was opened
-        // recently that is not already listed. Section headers told the user
-        // something they could see for themselves -- whether an item is a
-        // folder is in its own icon -- while splitting a short list into three
-        // labelled groups and leaving most of them empty.
         val listed = mutableSetOf<String>()
-        val ordered = dirs + files
-        ordered.forEach {
-            rows.add(Row.Entry(it, null,
-                isSynced = syncConfigs.isSynced(it.path),
-                isPendingSync = if (it.isDirectory) false else isPendingSync(it)))
-            listed.add(it.path)
+        fun addEntry(node: FileNode) {
+            rows.add(Row.Entry(node, null,
+                isSynced = syncConfigs.isSynced(node.path),
+                isPendingSync = if (node.isDirectory) false else isPendingSync(node)))
+            listed.add(node.path)
         }
-        // Recent entries that are not already on screen: a note opened from
-        // another folder, which browsing this one should not hide.
+
+        if (grouped) {
+            if (dirs.isNotEmpty()) {
+                rows.add(Row.Section(if (filter.isBlank()) "目录" else "匹配 ${dirs.size} 项"))
+                dirs.forEach(::addEntry)
+            }
+            if (files.isNotEmpty()) {
+                rows.add(Row.Section(if (filter.isBlank()) "文件" else "匹配 ${files.size} 项"))
+                files.forEach(::addEntry)
+            }
+        } else {
+            // Folders first, then notes, then whatever was opened recently
+            // that is not already listed: a note opened from another folder
+            // should not vanish because this one does not contain it.
+            (dirs + files).forEach(::addEntry)
+        }
         val extraRecents = recents.filter { it.path !in listed }
         if (extraRecents.isNotEmpty()) {
             if (rows.none { it is Row.Section }) rows.add(Row.Section("最近打开"))
             extraRecents.forEach { rows.add(Row.Entry(it, null, isPendingSync = isPendingSync(it))) }
         }
-        if (ordered.isEmpty() && extraRecents.isEmpty()) {
+        if (listed.isEmpty() && extraRecents.isEmpty()) {
             rows.add(Row.Section(if (filter.isBlank()) "" else "匹配 ${recents.size} 项"))
         }
         adapter.submit(rows)

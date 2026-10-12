@@ -35,20 +35,42 @@
             android:inputType="text"
             android:importantForAutofill="no" />
 
-        <!-- Where you are. Tap-free for now, but it is the only thing telling a
-             nested list apart from the root one. -->
-        <TextView
-            android:id="@+id/breadcrumb"
+        <!-- Where you are, and how this level is sorted. -->
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:paddingStart="16dp"
-            android:paddingEnd="16dp"
-            android:paddingTop="2dp"
-            android:paddingBottom="8dp"
-            android:textSize="12sp"
-            android:textColor="@color/fg_muted"
-            android:maxLines="1"
-            android:ellipsize="start" />
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingBottom="8dp">
+
+            <TextView
+                android:id="@+id/breadcrumb"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:paddingStart="16dp"
+                android:paddingEnd="4dp"
+                android:paddingTop="2dp"
+                android:textSize="12sp"
+                android:textColor="@color/fg_muted"
+                android:maxLines="1"
+                android:ellipsize="start" />
+
+            <!--
+              Grouped by default: folders together, then notes. The toggle is
+              here rather than in a menu because it changes what the list under
+              your finger looks like, and is likely to be reached for while
+              browsing rather than once per session.
+            -->
+            <ImageButton
+                android:id="@+id/btnGroupMode"
+                android:layout_width="34dp"
+                android:layout_height="34dp"
+                android:layout_marginEnd="10dp"
+                android:src="@drawable/ic_view_grouped"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:contentDescription="切换分组显示" />
+        </LinearLayout>
     </LinearLayout>
 
     <androidx.recyclerview.widget.RecyclerView

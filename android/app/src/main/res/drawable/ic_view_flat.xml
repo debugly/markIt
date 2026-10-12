@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Flat view: four rules with even gaps, one undivided list.
+
+  Evenly spaced against the paired-and-split grouped icon, so the two
+  states are distinguishable at toolbar size without reading the tooltip.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="@color/fg_muted"
+        android:pathData="M4,5.0h16v1.5H4zM4,8.6h16v1.5H4zM4,12.2h16v1.5H4zM4,15.8h16v1.5H4z" />
+</vector>

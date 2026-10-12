@@ -36,6 +36,21 @@ class BrowseFragment : Fragment() {
     private lateinit var searchField: EditText
     private lateinit var emptyState: TextView
     private lateinit var breadcrumb: TextView
+    private lateinit var groupToggle: android.widget.ImageButton
+
+    /**
+     * Whether folders and notes are listed under separate headings.
+     *
+     * Grouped is the default: folders first, then notes, is what a vault
+     * looks like from the outside. Flat is one undivided list, which is what
+     * you want once the breadcrumb already says where you are and two
+     * headings are just two more rows to scroll past.
+     *
+     * Deliberately not remembered between launches. Which of the two reads
+     * better depends on the folder, and a preference carried across sessions
+     * would silently override that judgement every time.
+     */
+    private var grouped = true
 
     private var nodes: List<FileNode> = emptyList()
 
@@ -70,6 +85,9 @@ class BrowseFragment : Fragment() {
         searchField = v.findViewById(R.id.searchField)
         emptyState = v.findViewById(R.id.emptyState)
         breadcrumb = v.findViewById(R.id.breadcrumb)
+        groupToggle = v.findViewById(R.id.btnGroupMode)
+        groupToggle.setOnClickListener { grouped = !grouped; applyGroupIcon(); rebuildRows() }
+        applyGroupIcon()
 
         path = arguments?.getString(ARG_PATH).orEmpty()
         breadcrumb.text = buildBreadcrumb()
@@ -140,13 +158,23 @@ class BrowseFragment : Fragment() {
         val files = shown.filter { !it.isDirectory }
 
         val rows = mutableListOf<Row>()
-        if (dirs.isNotEmpty()) {
-            rows.add(Row.Section(if (filter.isBlank()) "目录" else "匹配 ${dirs.size} 项"))
-            dirs.forEach { rows.add(Row.Entry(it, null, syncConfigs.isSynced(it.path))) }
-        }
-        if (files.isNotEmpty()) {
-            rows.add(Row.Section(if (filter.isBlank()) "文件" else "匹配 ${files.size} 项"))
-            files.forEach { rows.add(Row.Entry(it, null, isPendingSync = isPendingSync(it))) }
+        if (grouped) {
+            if (dirs.isNotEmpty()) {
+                rows.add(Row.Section(if (filter.isBlank()) "目录" else "匹配 ${dirs.size} 项"))
+                dirs.forEach { rows.add(Row.Entry(it, null, syncConfigs.isSynced(it.path))) }
+            }
+            if (files.isNotEmpty()) {
+                rows.add(Row.Section(if (filter.isBlank()) "文件" else "匹配 ${files.size} 项"))
+                files.forEach { rows.add(Row.Entry(it, null, isPendingSync = isPendingSync(it))) }
+            }
+        } else {
+            // One list. The icons already say which row is a folder, so the
+            // headings only cost two rows and a second scroll.
+            (dirs + files).forEach {
+                rows.add(Row.Entry(it, null,
+                    isSynced = syncConfigs.isSynced(it.path),
+                    isPendingSync = if (it.isDirectory) false else isPendingSync(it)))
+            }
         }
         adapter.submit(rows)
         showEmpty(
@@ -156,6 +184,14 @@ class BrowseFragment : Fragment() {
                 else -> "此文件夹为空"
             }
         )
+    }
+
+    /** The button shows the state you would switch to, not the one you are in. */
+    private fun applyGroupIcon() {
+        groupToggle.setImageResource(
+            if (grouped) R.drawable.ic_view_flat else R.drawable.ic_view_grouped
+        )
+        groupToggle.contentDescription = if (grouped) "改为平铺显示" else "改为分组显示"
     }
 
     private fun showEmpty(message: String?) {

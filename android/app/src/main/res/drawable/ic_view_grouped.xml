@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Grouped view: two pairs of rules with a wide gap between the pairs, which
+  is what "folders, then notes" looks like once the labels are gone. The gap
+  is the whole point of the icon, so it is drawn twice the height of the
+  gaps within each pair.
+
+  Not drawn as a picture of a folder and a sheet: the rows of this list are
+  already file type icons, and a second one here competes with them instead
+  of describing the layout.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="@color/fg_muted"
+        android:pathData="M4,4.4h16v1.5H4zM4,7.5h16v1.5H4zM4,12.6h16v1.5H4zM4,15.7h16v1.5H4z" />
+</vector>
