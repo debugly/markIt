@@ -8,3 +8,4 @@ dist/
 release-constants.env
 release-notes.md
 scratch/
+debug-symbols/
