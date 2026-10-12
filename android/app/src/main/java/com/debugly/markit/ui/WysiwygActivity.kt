@@ -13,6 +13,7 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.ImageButton
+import android.widget.EditText
 import android.widget.TextView
 import com.debugly.markit.R
 import com.debugly.markit.model.FrontMatterParser
@@ -41,6 +42,9 @@ import java.util.concurrent.Executors
  */
 class WysiwygActivity : Activity() {
     private lateinit var web: WebView
+    private lateinit var sourceEditor: EditText
+    /** True while the raw markdown is on screen instead of the rendered note. */
+    private var showingSource = false
     private lateinit var statusBar: TextView
     private lateinit var titleText: TextView
 
@@ -86,6 +90,7 @@ class WysiwygActivity : Activity() {
         titleText = findViewById(R.id.titleText)
         statusBar = findViewById(R.id.statusBar)
         web = findViewById(R.id.editorWeb)
+        sourceEditor = findViewById(R.id.sourceEditor)
 
         titleText.text = intent.getStringExtra(EXTRA_NAME) ?: path.substringAfterLast('/')
 
@@ -142,8 +147,18 @@ class WysiwygActivity : Activity() {
         findViewById<ImageButton>(R.id.btnItalic).setOnClickListener { runCommand("toggleItalic") }
         findViewById<ImageButton>(R.id.btnHeading).setOnClickListener { runCommand("toggleHeading") }
         findViewById<ImageButton>(R.id.btnList).setOnClickListener { runCommand("toggleBulletList") }
-        findViewById<ImageButton>(R.id.btnSource).setOnClickListener { openSourceEditor() }
-        findViewById<ImageButton>(R.id.btnMore).setOnClickListener { showMenu() }
+        findViewById<ImageButton>(R.id.btnSource).setOnClickListener { toggleSource() }
+        findViewById<ImageButton>(R.id.btnBack).setOnClickListener { leave() }
+        sourceEditor.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun afterTextChanged(e: android.text.Editable?) {
+                if (!showingSource) return
+                markdown = e?.toString().orEmpty()
+                dirty = true
+                updateSourceStatus()
+            }
+        })
 
         loadTemplate(intent.getStringExtra(EXTRA_CONTENT).orEmpty())
     }
@@ -260,15 +275,63 @@ class WysiwygActivity : Activity() {
     }
 
     /**
-     * Hands the note to the plain source editor.
+     * Swaps the rendered note for its raw markdown, in this same screen.
      *
-     * The two are the same document with two faces, so this flushes the current
-     * markdown through the same save path rather than opening the source view
-     * with stale content and letting the next save overwrite the edits.
+     * A separate activity for this meant a second toolbar, title and back
+     * button for the same note, and a back stack entry that outlived the view
+     * it was opened to look at. Editing the markup is looking at the same
+     * document differently, not going somewhere else.
      */
-    private fun openSourceEditor() {
-        val content = if (dirty) currentContent() else intent.getStringExtra(EXTRA_CONTENT).orEmpty()
-        startActivity(EditorActivity.intent(this, path, path.substringAfterLast('/'), content))
+    private fun toggleSource() {
+        if (showingSource) {
+            // Commit what was typed here before handing it back to the editor,
+            // so the rendered note cannot lag behind the source.
+            markdown = sourceEditor.text.toString()
+            loadTemplate(currentContent())
+            showingSource = false
+            sourceEditor.visibility = android.view.View.GONE
+            web.visibility = android.view.View.VISIBLE
+            updateFormattingButtons()
+        } else {
+            val text = currentContent()
+            if (text != sourceEditor.text.toString()) sourceEditor.setText(text)
+            showingSource = true
+            sourceEditor.visibility = android.view.View.VISIBLE
+            web.visibility = android.view.View.GONE
+            // Formatting belongs to the rendered view; offering it over raw
+            // text would be offering a toolbar that cannot act on what is shown.
+            updateFormattingButtons()
+            sourceEditor.requestFocus()
+        }
+    }
+
+    private fun updateFormattingButtons() {
+        val on = !showingSource
+        findViewById<ImageButton>(R.id.btnBold).visibility = if (on) android.view.View.VISIBLE else android.view.View.GONE
+        findViewById<ImageButton>(R.id.btnItalic).visibility = if (on) android.view.View.VISIBLE else android.view.View.GONE
+        findViewById<ImageButton>(R.id.btnHeading).visibility = if (on) android.view.View.VISIBLE else android.view.View.GONE
+        findViewById<ImageButton>(R.id.btnList).visibility = if (on) android.view.View.VISIBLE else android.view.View.GONE
+        // The button names where it takes you, not where it came from. The
+        // eye means "go look at the rendered note"; a pencil next to a code
+        // glyph, or a code glyph next to a rendered note, both leave the user
+        // reading the icon twice.
+        findViewById<ImageButton>(R.id.btnSource).setImageResource(
+            if (showingSource) R.drawable.ic_preview else R.drawable.ic_code
+        )
+        findViewById<ImageButton>(R.id.btnSource).contentDescription =
+            if (showingSource) "切换回所见即所得" else "切换到源码"
+        updateSourceStatus()
+    }
+
+    private fun updateSourceStatus() {
+        if (!showingSource) return
+        statusBar.text = "源码模式"
+    }
+
+    /** Leaving the screen always writes. The autosave timer cannot be trusted to have fired. */
+    private fun leave() {
+        if (dirty) save(syncImmediately = true)
+        finish()
     }
 
     /** Rebuilds the note from the page state and the front matter fields. */
@@ -314,18 +377,6 @@ class WysiwygActivity : Activity() {
         }
     }
 
-    private fun showMenu() {
-        android.app.AlertDialog.Builder(this)
-            .setItems(arrayOf("保存", "在源码中打开", "返回文件列表")) { _, which ->
-                when (which) {
-                    0 -> save()
-                    1 -> openSourceEditor()
-                    2 -> finish()
-                }
-            }
-            .show()
-    }
-
     private fun resolveStore(): DocumentStore? {
         val tree = getSharedPreferences("markit", MODE_PRIVATE).getString("tree_uri", null)
             ?: return null
@@ -333,21 +384,13 @@ class WysiwygActivity : Activity() {
     }
 
     override fun onBackPressed() {
-        // Unsaved work is the user's, so ask rather than dropping it. Saving
-        // first would be wrong for a note that was only opened to read.
-        if (!dirty) {
-            super.onBackPressed()
-            return
-        }
-        android.app.AlertDialog.Builder(this)
-            .setTitle("有未保存的修改")
-            .setItems(arrayOf("保存并退出", "不保存退出", "继续编辑")) { _, which ->
-                when (which) {
-                    0 -> { save(); finish() }
-                    1 -> finish()
-                }
-            }
-            .show()
+        // Back always writes. Asking first was a prompt for something the user
+        // can only answer one way: the text on screen is the text they meant,
+        // and the autosave timer is not something they should have to reason
+        // about to avoid losing work. "不保存退出" existed as an escape hatch
+        // for an accident the save prevents in the first place.
+        if (dirty) save(syncImmediately = true)
+        super.onBackPressed()
     }
 
     /**
