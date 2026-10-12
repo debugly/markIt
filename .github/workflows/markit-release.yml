@@ -113,8 +113,15 @@ jobs:
         zip -rq "MarkIt-${VERSION}.zip" Markit.app
         ls -l
 
-    # dSYM 取 build.sh 导出到 build/ 的那一份，不再复制进 dist/。
-    - name: Move dSYM out of the user download
+    # dSYM 单独打一个 zip，作为 release 的第三个资产上传。
+    #
+    # 它要能按版本取到：崩溃日志里只有 UUID 和加载地址，要还原成源码行号
+    # 必须配对「那个构建」的 dSYM。所以文件名带版本号，和 app 放在同一个 release
+    # 里，排查崩溃的人一眼就知道该下哪一个。
+    #
+    # 但不放进 app 那个 zip：绝大多数用户只是拖进「应用程序」，不解压也不
+    # 该看见符号表，白占好几 MB。
+    - name: Package dSYM
       run: |
         set -euo pipefail
         set -a; source release-constants.env; set +a
@@ -125,10 +132,22 @@ jobs:
           exit 1
         fi
         mv "$DSYM" debug-symbols/
-        echo "dSYM kept for crash analysis: $(basename "$DSYM")"
-        # 用户会下载的目录里不能有它
-        test ! -e "dist/Markit.app.dSYM" || {
-          echo "::error::dSYM is still in dist/" >&2; exit 1; }
+        # 明确写出 dist/ 而不是用 ../：subshell 里换工作目录之后，相对路径的
+        # 基准变了，写 ../ 会把 zip 落在仓库根目录，然后下一步找不到它。
+        (cd debug-symbols && zip -rq "$GITHUB_WORKSPACE/dist/MarkIt-${VERSION}-dSYM.zip" ./*.dSYM)
+        echo "dSYM for crash analysis: MarkIt-${VERSION}-dSYM.zip"
+        ls -l
+
+    # 确认它没有混进 app 的 zip：用户那份只能是 app 一个目录。
+    - name: Verify user archive holds only the app
+      run: |
+        set -euo pipefail
+        set -a; source release-constants.env; set +a
+        TOP="$(unzip -Z1 "dist/MarkIt-${VERSION}.zip" | cut -d/ -f1 | sort -u)"
+        echo "top level: $TOP"
+        test "$TOP" = "Markit.app" || {
+          echo "::error::user zip should contain only Markit.app, found: $TOP" >&2
+          exit 1; }
 
     # ---- Android ----
     #
@@ -170,9 +189,11 @@ jobs:
         set -a; source release-constants.env; set +a
 
         shopt -s nullglob
-        ASSETS=(dist/MarkIt-${VERSION}.zip dist/MarkIt-${VERSION}.apk)
+        # The dSYM rides along as its own asset: wanted when reading a crash
+        # log, unwanted when just installing the app.
+        ASSETS=(dist/MarkIt-${VERSION}.zip dist/MarkIt-${VERSION}.apk dist/MarkIt-${VERSION}-dSYM.zip)
         shopt -u nullglob
-        test "${#ASSETS[@]}" -eq 2 || { echo "::error::expected 2 assets, got ${#ASSETS[@]}"; exit 1; }
+        test "${#ASSETS[@]}" -eq 3 || { echo "::error::expected 3 assets, got ${#ASSETS[@]}"; exit 1; }
 
         echo "::notice::发布 ${TAG}：${#ASSETS[@]} 个资产"
 

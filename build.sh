@@ -5,8 +5,9 @@ cd "$(dirname "$0")"
 #   MARKIT_DEST     构建完成后把 .app 放哪。默认 /Applications（本地开发习惯）。
 #                   传一个目录就 rsync 到那里，传空字符串就完全不拷贝。
 #   MARKIT_OPEN     1 = 构建完自动打开（本地默认）。其他值 = 不打开。
-#   MARKIT_KEEP_DSYM 1 = 把 dSYM 导出到 build/（供 CI 打包 artifact），不拷进
-#                     MARKIT_DEST —— 用户不需要它。
+#   MARKIT_KEEP_DSYM 1 = 把 dSYM 导出到 build/，CI 会把它单独打成
+#                     MarkIt-<version>-dSYM.zip 上传。不拷进 MARKIT_DEST：
+#                     装 App 的人不需要符号表。
 #   MARKIT_BUILD    CURRENT_PROJECT_VERSION（build 号）的值。默认取当天日期 MMdd。
 #                   刻意和 MARKETING_VERSION 分开：后者是 0.4.0 这样的对外版本号，
 #                   前者是每次构建都要变大的编号，拿版本号去填会让两次构建的
