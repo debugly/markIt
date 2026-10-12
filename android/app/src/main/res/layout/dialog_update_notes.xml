@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Update notes.
+
+  The notes come from a GitHub release body, which is markdown written by
+  whoever cut the tag. AlertDialog's message renders it as plain text, so
+  "## 修复" arrived as the literal characters and "- 修好了" as a hyphen and
+  a word.
+
+  The height is fixed rather than wrap_content because release notes run from
+  one line to a few hundred, and a dialog that resizes between checking two
+  versions is worse than one that scrolls.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingStart="24dp"
+    android:paddingEnd="24dp"
+    android:paddingTop="8dp">
+
+    <TextView
+        android:id="@+id/updateVersion"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textSize="13sp"
+        android:textColor="@color/fg_muted"
+        android:paddingBottom="8dp" />
+
+    <WebView
+        android:id="@+id/notesView"
+        android:layout_width="match_parent"
+        android:layout_height="320dp"
+        android:scrollbars="vertical" />
+
+</LinearLayout>

@@ -10,6 +10,7 @@ import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Spinner
 import android.widget.TextView
+import android.webkit.WebView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
@@ -177,21 +178,15 @@ class SettingsFragment : Fragment() {
             is UpdateCheckResult.Available -> {
                 val update = result.update
                 builder.setTitle("发现新版本 ${update.version}")
-                    .setMessage(
-                        buildString {
-                            append("当前版本 ${BuildConfig.VERSION_NAME}。\n\n")
-                            if (update.notes.isNotBlank()) {
-                                append(update.notes.trim())
-                                append("\n\n")
-                            }
-                            append("是否打开浏览器下载安装包？")
-                        }
-                    )
-                    .setPositiveButton("下载") { _, _ -> openInBrowser(update.apkUrl) }
-                    .setNeutralButton("稍后", null)
-                    // A release whose APK failed to upload should still be
-                    // reachable, so the release page is the fallback.
-                    .setNegativeButton("查看发布页") { _, _ -> openInBrowser(update.releaseUrl) }
+                // Rendered, not printed: the release body is markdown, and
+                // AlertDialog would show its headings and bullets as literal
+                // "#" and "-" characters.
+                builder.setView(updateNotesView(update.notes))
+                builder.setPositiveButton("下载") { _, _ -> openInBrowser(update.apkUrl) }
+                builder.setNeutralButton("稍后", null)
+                // A release whose APK failed to upload should still be
+                // reachable, so the release page is the fallback.
+                builder.setNegativeButton("查看发布页") { _, _ -> openInBrowser(update.releaseUrl) }
             }
 
             is UpdateCheckResult.Failed ->
@@ -205,6 +200,28 @@ class SettingsFragment : Fragment() {
             builder.setPositiveButton("好", null)
         }
         builder.show()
+    }
+
+    /**
+     * The release notes, rendered, in a fixed height box that scrolls.
+     *
+     * Fixed height rather than wrap_content on purpose: release notes run from
+     * one line to a couple of hundred, and a dialog that jumps in size every
+     * time it is shown is harder to read than a steady one that scrolls.
+     *
+     * The WebView is given no script, and no base URL, so a release body
+     * cannot execute anything or pull anything in.
+     */
+    private fun updateNotesView(notes: String): View {
+        val view = layoutInflater.inflate(R.layout.dialog_update_notes, null)
+        val version = view.findViewById<TextView>(R.id.updateVersion)
+        version.text = "当前版本 ${BuildConfig.VERSION_NAME}"
+
+        val web = view.findViewById<WebView>(R.id.notesView)
+        web.settings.javaScriptEnabled = false
+        val body = notes.trim().ifEmpty { "这个版本没有说明。" }
+        web.loadDataWithBaseURL(null, Markdown.renderHtml(body), "text/html", "UTF-8", null)
+        return view
     }
 
     /**
