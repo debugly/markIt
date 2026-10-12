@@ -111,7 +111,7 @@ class MainActivity : AppCompatActivity(), BrowseFragment.Host, SettingsFragment.
         io.execute {
             val content = try { s.readText(node.path) } catch (e: Exception) { "" }
             runOnUiThread {
-                startActivity(EditorActivity.intent(this@MainActivity, node.path, name, content))
+                startActivity(WysiwygActivity.intent(this@MainActivity, node.path, name, content))
             }
         }
     }
@@ -487,7 +487,7 @@ class MainActivity : AppCompatActivity(), BrowseFragment.Host, SettingsFragment.
         io.execute {
             val content = try { s.readText(node.path) } catch (e: Exception) { "" }
             runOnUiThread {
-                startActivity(EditorActivity.intent(this@MainActivity, node.path, name, content))
+                startActivity(WysiwygActivity.intent(this@MainActivity, node.path, name, content))
             }
         }
     }
