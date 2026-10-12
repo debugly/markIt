@@ -11,7 +11,7 @@ import Combine
 public final class SyncCoordinator: ObservableObject, @unchecked Sendable {
     public static let shared = SyncCoordinator()
 
-    private let defaultsSuite = "com.debugly.markit"
+
     private let configsStorageKey = "WebDAVFolderConfigs"
 
     @Published public private(set) var configs: [WebDAVFolderConfig] = []
@@ -34,7 +34,7 @@ public final class SyncCoordinator: ObservableObject, @unchecked Sendable {
     // MARK: - Config Persistence
 
     private var defaults: UserDefaults {
-        UserDefaults(suiteName: defaultsSuite) ?? .standard
+        AppDefaults.store()
     }
 
     private func loadConfigs() {

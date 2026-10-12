@@ -47,12 +47,7 @@ final class AppState: ObservableObject {
         didSet { document.previewStyle = previewStyle }
     }
 
-    private var defaults: UserDefaults {
-        if let bundleId = Bundle.main.bundleIdentifier, bundleId == "com.debugly.markit" {
-            return UserDefaults.standard
-        }
-        return UserDefaults(suiteName: "com.debugly.markit") ?? UserDefaults.standard
-    }
+    private var defaults: UserDefaults { AppDefaults.store() }
 
     private let inspectKey = "MarkIt.IsWebViewInspectEnabled"
     @Published var isWebViewInspectEnabled: Bool = false {
@@ -100,6 +95,15 @@ final class AppState: ObservableObject {
     }
 
     private func clearPersistedStateForUITest() {
+        // --uitest-reset means "start from a clean state", and on the user's
+        // own defaults that instruction reads exactly like "delete their
+        // folders and recent files". Isolation via AppDefaults is what actually
+        // makes it safe; this guard exists so that a misconfigured runner
+        // fails loudly instead of quietly emptying the real store.
+        precondition(
+            AppDefaults.isIsolated,
+            "--uitest-reset must be paired with --uitest-suite <name>; refusing to clear production defaults"
+        )
         defaults.removeObject(forKey: bookmarksKey)
         defaults.removeObject(forKey: recentFilesKey)
         defaults.removeObject(forKey: lastOpenedFileBookmarkKey)

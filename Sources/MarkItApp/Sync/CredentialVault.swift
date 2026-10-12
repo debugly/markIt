@@ -14,12 +14,12 @@ import IOKit
 enum CredentialVault {
     private static let serviceName = "com.debugly.markit.webdav"
     private static let vaultStorageKey = "MarkIt.WebDAVSecureVault"
-    private static let defaultsSuite = "com.debugly.markit"
+
     private static let lock = NSLock()
     private static var memoryCache: [String: String] = [:]
 
     private static var defaults: UserDefaults {
-        UserDefaults(suiteName: defaultsSuite) ?? .standard
+        AppDefaults.store()
     }
 
     // MARK: - Key Derivation & Hardware Binding
