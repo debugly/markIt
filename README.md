@@ -67,7 +67,10 @@ GitHub Actions 一次构建两个平台的包：
 
 ```sh
 git tag 0.5.0 && git push origin 0.5.0
+gh workflow run markit-release.yml -f tag=0.5.0 -f beta=false
 ```
+
+推 tag 只是标记版本，构建要手动触发：workflow 只监听 `workflow_dispatch`，没有监听 tag push。
 
 一个 release 里三个文件：
 
