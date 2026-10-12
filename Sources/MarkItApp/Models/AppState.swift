@@ -606,10 +606,20 @@ final class AppState: ObservableObject {
             return
         }
 
-        guard document.isDirty else {
-            // Already on disk. Doing nothing is right, but saying so beats
-            // leaving the keypress looking like it was swallowed.
-            showTransientStatus("已是最新，无需保存")
+        // Saving and syncing are two separate jobs, and Cmd+S means "make
+        // both true". Autosave usually finished the first one long before the
+        // user presses the key, so the isDirty check alone reported "nothing
+        // to do" while an orange cloud was still waiting out its 30 seconds.
+        if document.isDirty == false {
+            // Nothing to write. If the cloud still says otherwise, the change
+            // is already on disk and only the upload is outstanding -- so sync
+            // rather than claim there was nothing to do.
+            if SyncCoordinator.shared.hasPendingSync(for: url) {
+                SyncCoordinator.shared.flushPendingSync(for: url)
+                showTransientStatus("正在同步")
+            } else {
+                showTransientStatus("已是最新，无需保存")
+            }
             return
         }
 

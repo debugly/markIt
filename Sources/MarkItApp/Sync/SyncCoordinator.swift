@@ -309,6 +309,21 @@ public final class SyncCoordinator: ObservableObject, @unchecked Sendable {
     /// upload twice, minutes apart, from whichever side reacted first.
     public static let autoSyncDebounce: TimeInterval = 30.0
 
+    /// Whether `url` sits in a sync folder that still has changes to push.
+    ///
+    /// The unsaved-changes check answers "is the buffer ahead of the disk",
+    /// which is a different question. Autosave clears that one while the
+    /// upload is still pending, so using it alone made Cmd+S report "nothing
+    /// to do" while an orange cloud sat in the sidebar waiting out its 30
+    /// seconds.
+    public func hasPendingSync(for url: URL) -> Bool {
+        guard let cfg = config(for: url), let localRoot = cfg.resolveLocalURL() else {
+            return false
+        }
+        let keys = [url.standardizedFileURL, localRoot.standardizedFileURL]
+        return keys.contains { syncStatuses[$0]?.isModified == true }
+    }
+
     /// Runs the pending debounced sync for `url` right now.
     ///
     /// Cmd+S means "I am done editing" -- the same thing 30 seconds of
