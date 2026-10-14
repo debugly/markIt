@@ -206,4 +206,34 @@ final class MarkitUITests: XCTestCase {
         let value = filterField.value as? String ?? ""
         XCTAssertTrue(value.contains("sample"), "过滤框应包含输入内容，实际为: \(value)")
     }
+
+    /// 7. 删除键在「最近打开」组里 = 右键「移除记录」：只删记录，不弹框、不动磁盘文件。
+    ///
+    /// 最近打开的行在数据源里是 URL（文件夹树里是 FileNode），过去删除逻辑只认 FileNode，
+    /// 选中最近文件按删除键静默无响应。
+    func testDeleteKeyDropsRecentEntry() {
+        let app = launchApp(arguments: [textFixtureURL.path])
+
+        let outline = app.outlines["sidebarOutline"]
+        XCTAssertTrue(outline.waitForExistence(timeout: 15), "侧边栏文件列表应存在")
+
+        // 启动时打开的文件会进入「最近打开」组；行标题是「所在文件夹/文件名」，
+        // 所以按文件名包含匹配，不要用等值。
+        let rowMatcher = NSPredicate(format: "value CONTAINS %@", textFixtureURL.lastPathComponent)
+        let recentRow = outline.staticTexts.matching(rowMatcher).firstMatch
+        XCTAssertTrue(recentRow.waitForExistence(timeout: 10), "最近打开组里应有 sample.txt")
+        recentRow.click()
+
+        app.typeKey(.delete, modifierFlags: [])
+
+        // 记录从列表里消失。
+        let gone = NSPredicate(format: "exists == false")
+        expectation(for: gone, evaluatedWith: recentRow)
+        waitForExpectations(timeout: 10)
+
+        // 不弹确认框，磁盘上的文件也不受影响。
+        XCTAssertFalse(app.sheets.firstMatch.exists, "移除最近打开记录不应弹出确认框")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: textFixtureURL.path),
+                      "移除记录不应把文件移到废纸篓")
+    }
 }

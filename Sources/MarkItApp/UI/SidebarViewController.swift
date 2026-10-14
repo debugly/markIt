@@ -1330,6 +1330,11 @@ extension SidebarViewController: NSMenuDelegate {
         showDeleteConfirmation(for: url)
     }
 
+    /// 状态栏选中行按删除键的入口。
+    ///
+    /// 侧边栏有两种行：文件夹树里是 FileNode，「最近打开」组里是裸 URL，两者语义不同——
+    /// 文件夹树按删除键 = 移到废纸篓（走确认流程），最近打开只是一份记录，按删除键等同于
+    /// 右键「移除记录」：不弹框，也不动磁盘上的文件。分组头（String）没有对应动作。
     func deleteSelectedItem() {
         let row = outlineView.selectedRow
         guard row >= 0, let item = outlineView.item(atRow: row) else { return }
@@ -1338,6 +1343,10 @@ extension SidebarViewController: NSMenuDelegate {
             if !isRoot {
                 showDeleteConfirmation(for: node.url)
             }
+            return
+        }
+        if let url = item as? URL {
+            state.removeRecentFile(url)
         }
     }
 
