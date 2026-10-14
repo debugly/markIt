@@ -31,6 +31,21 @@ class BrowseFragment : Fragment() {
     private var path: String = ""
     private var filter: String = ""
 
+    /**
+     * The folder this level shows.
+     *
+     * The host reads it when creating a note, so a new file lands in the folder
+     * on screen instead of the vault root.
+     */
+    val folderPath: String get() = path
+
+    /** Re-reads this level. The host calls it after creating a file in here. */
+    fun reload() {
+        // The view check matters: a level left on the back stack is still added,
+        // and load() writes through the adapter that onCreateView set up.
+        if (isAdded && view != null) load()
+    }
+
     private lateinit var listView: RecyclerView
     private lateinit var adapter: FileListAdapter
     private lateinit var searchField: EditText
@@ -238,7 +253,11 @@ class BrowseFragment : Fragment() {
         a.findViewById<View>(R.id.fileList).visibility = on
         a.findViewById<View>(R.id.emptyState).visibility =
             if (visible && emptyState.text.isNotEmpty()) View.VISIBLE else View.GONE
-        a.findViewById<View>(R.id.fabNew).visibility = on
+        // The create button stays. It belongs to the activity, not to the root
+        // listing, and creating a note is just as much a thing you do inside a
+        // folder as at the top -- hiding it left a level with no way to add
+        // anything.
+        a.findViewById<View>(R.id.fabNew).visibility = View.VISIBLE
         a.findViewById<View>(R.id.browseContainer).visibility =
             if (visible) View.GONE else View.VISIBLE
     }

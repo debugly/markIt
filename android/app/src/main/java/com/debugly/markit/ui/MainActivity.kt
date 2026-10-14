@@ -477,9 +477,29 @@ class MainActivity : AppCompatActivity(), BrowseFragment.Host, SettingsFragment.
         findViewById<View>(R.id.fileList).visibility = on
         findViewById<View>(R.id.emptyState).visibility =
             if (visible && allNodes.isEmpty()) View.VISIBLE else View.GONE
-        findViewById<View>(R.id.fabNew).visibility = on
+        // Left visible on purpose: the button creates inside whatever folder is
+        // on screen, so descending is not a reason to take it away.
+        findViewById<View>(R.id.fabNew).visibility = View.VISIBLE
         findViewById<View>(R.id.browseContainer).visibility =
             if (visible) View.GONE else View.VISIBLE
+    }
+
+    /**
+     * The folder the user is looking at: the pushed level when one is showing,
+     * the vault root otherwise.
+     *
+     * Read off the fragment rather than mirrored into a field. The back stack is
+     * what knows the current level, and a copy would have to be unwound by hand
+     * on every back press -- including the ones the system performs for us.
+     */
+    private fun activeFolderPath(): String =
+        (supportFragmentManager.findFragmentById(R.id.browseContainer) as? BrowseFragment)
+            ?.folderPath.orEmpty()
+
+    /** Re-reads the level on screen, if one is pushed. */
+    private fun reloadActiveLevel() {
+        (supportFragmentManager.findFragmentById(R.id.browseContainer) as? BrowseFragment)
+            ?.reload()
     }
 
     private fun openNode(node: FileNode) {
@@ -695,6 +715,10 @@ class MainActivity : AppCompatActivity(), BrowseFragment.Host, SettingsFragment.
     }
 
     private fun promptNewFile() {
+        // Captured before the dialog opens: the target folder is the one the user
+        // was looking at when they tapped the button, so a level change behind the
+        // dialog cannot redirect the file somewhere they did not choose.
+        val folder = activeFolderPath()
         val input = EditText(this).apply { hint = "文件名.md" }
         AlertDialog.Builder(this)
             .setTitle("新建 Markdown")
@@ -703,12 +727,15 @@ class MainActivity : AppCompatActivity(), BrowseFragment.Host, SettingsFragment.
                 val raw = input.text.toString().trim()
                 if (raw.isEmpty()) return@setPositiveButton
                 val name = if (raw.endsWith(".md") || raw.endsWith(".markdown")) raw else "$raw.md"
-                val path = if (currentPath.isEmpty()) name else "$currentPath/$name"
+                val path = if (folder.isEmpty()) name else "$folder/$name"
                 val s = store ?: return@setPositiveButton
                 io.execute {
                     s.writeText(path, "")
                     requestAutoSync(path)
-                    runOnUiThread { load() }
+                    runOnUiThread {
+                        load()
+                        reloadActiveLevel()
+                    }
                 }
             }
             .setNegativeButton("取消", null)
@@ -716,6 +743,7 @@ class MainActivity : AppCompatActivity(), BrowseFragment.Host, SettingsFragment.
     }
 
     private fun promptNewFolder() {
+        val folder = activeFolderPath()
         val input = EditText(this).apply { hint = "文件夹名" }
         AlertDialog.Builder(this)
             .setTitle("新建文件夹")
@@ -723,12 +751,15 @@ class MainActivity : AppCompatActivity(), BrowseFragment.Host, SettingsFragment.
             .setPositiveButton("创建") { _, _ ->
                 val name = input.text.toString().trim()
                 if (name.isEmpty()) return@setPositiveButton
-                val path = if (currentPath.isEmpty()) name else "$currentPath/$name"
+                val path = if (folder.isEmpty()) name else "$folder/$name"
                 val s = store ?: return@setPositiveButton
                 io.execute {
                     s.createDirectory(path)
                     requestAutoSync(path)
-                    runOnUiThread { load() }
+                    runOnUiThread {
+                        load()
+                        reloadActiveLevel()
+                    }
                 }
             }
             .setNegativeButton("取消", null)
