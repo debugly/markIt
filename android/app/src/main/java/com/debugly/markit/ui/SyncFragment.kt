@@ -130,17 +130,10 @@ class SyncFragment : Fragment() {
         super.onStop()
         backCallback?.remove()
         backCallback = null
-        // Save on the way out as well as on a successful test. Requiring a
-        // reachable server would mean a user on a laptop that is offline, or
-        // pointing at a server that is temporarily down, could never keep the
-        // settings they just typed.
-        if (::urlField.isInitialized) {
-            val config = formConfig()
-            if (config.isConfigured) {
-                persist(config)
-                removeButton.visibility = View.VISIBLE
-            }
-        }
+        // Nothing is written on the way out. Saving is the user's call -- pressing
+        // 立即同步 is what commits the form -- so leaving the screen must not
+        // quietly store a half-typed server, and must not reveal the stop button
+        // for a folder that was never actually set up.
     }
 
     private fun goBack() {
@@ -212,11 +205,11 @@ class SyncFragment : Fragment() {
                 }
             }
             statusText.text = message
-            // Only a config that actually connected is worth keeping.
-            if (message == "连接成功") {
-                persist(config)
-                removeButton.visibility = View.VISIBLE
-            } else {
+            // A test only reports. It used to write the config on success, which
+            // meant the folder was already half-linked before the user decided
+            // anything -- and it brought the stop button up for a folder that had
+            // never been synced. 立即同步 is the only thing that saves now.
+            if (message != "连接成功") {
                 AlertDialog.Builder(requireContext())
                     .setTitle("连接失败")
                     .setMessage(message)
