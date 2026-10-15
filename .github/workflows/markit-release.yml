@@ -154,23 +154,27 @@ jobs:
 
     # ---- Android ----
     #
-    # debug 签名：没有 release keystore 的话没法出正式签名包，而 debug 包
-    # 已经能装、能用全功能。要正式签名的话把 keystore 存成 repository secret，
-    # 这里换成 release 构型即可。
+    # 没有 keystore、或 keystore/密码/别名打不开，就让 release 失败：
+    # 不再退回 debug 签名，因为每次 debug 签名都不同，用户升级会报签名冲突。
     - name: Decode release keystore
       env:
         KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        KS_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
       run: |
-        if [[ -z "$KEYSTORE_B64" ]]; then
-          echo "::warning::ANDROID_KEYSTORE_BASE64 is not set, the APK will be signed with the debug key"
-          exit 0
-        fi
+        set -euo pipefail
+        for v in KEYSTORE_B64 KS_PASS KS_ALIAS KEY_PASS; do
+          [[ -n "${!v}" ]] || { echo "::error::secret for $v is empty or missing in the markit-release environment"; exit 1; }
+        done
         echo "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/release.jks"
+        keytool -list -keystore "$RUNNER_TEMP/release.jks" -storepass "$KS_PASS" -alias "$KS_ALIAS" \
+          || { echo "::error::cannot open the keystore with the given password/alias"; exit 1; }
         {
           echo "FS_KEYSTORE_FILE=$RUNNER_TEMP/release.jks"
-          echo "FS_KEYSTORE_PASSWORD=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}"
-          echo "FS_KEY_ALIAS=${{ secrets.ANDROID_KEY_ALIAS }}"
-          echo "FS_KEY_PASSWORD=${{ secrets.ANDROID_KEY_PASSWORD }}"
+          echo "FS_KEYSTORE_PASSWORD=$KS_PASS"
+          echo "FS_KEY_ALIAS=$KS_ALIAS"
+          echo "FS_KEY_PASSWORD=$KEY_PASS"
         } >> "$GITHUB_ENV"
 
     - name: Build Android APK
@@ -178,19 +182,22 @@ jobs:
         set -euo pipefail
         chmod +x android/gradlew
         cd android
-        ./gradlew :app:assembleRelease --no-daemon --stacktrace \
-          || {
-            echo "::error::release build failed; falling back to the debug APK so the release still ships something installable"
-            ./gradlew :app:assembleDebug --no-daemon --stacktrace
-          }
+        ./gradlew :app:assembleRelease --no-daemon --stacktrace
 
     - name: Collect Android APK
       run: |
         set -euo pipefail
         set -a; source release-constants.env; set +a
-        APK="$(ls android/app/build/outputs/apk/release/*.apk 2>/dev/null | head -1 \
-               || ls android/app/build/outputs/apk/debug/*.apk 2>/dev/null | head -1)"
-        test -n "$APK" || { echo "::error::no APK produced"; exit 1; }
+        APK="$(ls android/app/build/outputs/apk/release/*.apk | head -1)"
+        test -n "$APK" || { echo "::error::no release APK produced"; exit 1; }
+        # the APK must carry the keystore's certificate, not the debug one
+        KS_SHA="$(keytool -list -keystore "$FS_KEYSTORE_FILE" -storepass "$FS_KEYSTORE_PASSWORD" -alias "$FS_KEY_ALIAS" \
+                  | grep -oE '([0-9A-F]{2}:){31}[0-9A-F]{2}' | head -1 | tr -d ':' | tr 'A-F' 'a-f')"
+        APK_SHA="$("$ANDROID_HOME"/build-tools/35.0.0/apksigner verify --print-certs "$APK" \
+                  | grep -m1 'certificate SHA-256 digest' | awk '{print $NF}')"
+        echo "keystore cert: $KS_SHA"; echo "apk cert:      $APK_SHA"
+        [[ -n "$KS_SHA" && "$KS_SHA" == "$APK_SHA" ]] \
+          || { echo "::error::APK is not signed with the release keystore"; exit 1; }
         echo "using $APK"
         cp "$APK" "dist/MarkIt-${VERSION}.apk"
         ls -l dist
