@@ -11,8 +11,8 @@ android {
         applicationId = "com.debugly.markit"
         minSdk = 26
         targetSdk = 36
-        versionCode = 4
-        versionName = "0.4.4"
+        versionCode = 5
+        versionName = "0.4.5"
     }
 
     signingConfigs {
