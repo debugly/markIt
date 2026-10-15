@@ -15,6 +15,19 @@ android {
         versionName = "0.4.4"
     }
 
+    signingConfigs {
+        create("release") {
+            // CI decodes the keystore from secrets and exports these variables;
+            // without them the release build falls back to the debug key.
+            System.getenv("FS_KEYSTORE_FILE")?.let { ks ->
+                storeFile = file(ks)
+                storePassword = System.getenv("FS_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("FS_KEY_ALIAS")
+                keyPassword = System.getenv("FS_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -28,7 +41,9 @@ android {
             // The debug key is not a secret and does not provide identity, but
             // it makes the artifact installable, which is what a side-loaded
             // app needs. Set MARKIT_KEYSTORE to publish a properly signed one.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName(
+                if (System.getenv("FS_KEYSTORE_FILE") != null) "release" else "debug"
+            )
         }
     }
 
